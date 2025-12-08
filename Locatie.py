@@ -34,7 +34,7 @@ def merge_shapefiles(folder: str, recursive: bool = False) -> gpd.GeoDataFrame:
 
 # === Paden naar data ===
 BASE_DATA_DIR = Path("Data")
-VKA_BASE_DIR = BASE_DATA_DIR / "20250827_export_VKAs" / "20250827_export_VKAs"
+VKA_BASE_DIR = BASE_DATA_DIR / "20250827_export_VKAs"
 
 BOVENREGIONAAL_VKA_DIR = VKA_BASE_DIR / "Bovenregionaal VKA"
 LOCATIESPECIFIEK_VKA_DIR = VKA_BASE_DIR / "Locatiespecifiek VKA"

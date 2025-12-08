@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_LS_20",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "fid": null, "id": null, "aantal_woo": null, "aantal_bij": null, "aantal_gez": null, "aantal_cel": null, "aantal_ond": null, "aantal_log": null }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 187465.425206198531669, 464177.71294117445359 ], [ 187710.345811749779386, 464043.386329990345985 ], [ 188565.983718216535635, 459714.747411903052125 ], [ 186811.936842661845731, 459368.026647051796317 ], [ 185921.535251806228189, 463872.533693519653752 ], [ 187465.425206198531669, 464177.71294117445359 ] ] ] ] } }
+]
+}

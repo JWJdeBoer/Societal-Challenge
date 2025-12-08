@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_LS_12",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "id": null }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 107539.320132790831849, 562770.236678594490513 ], [ 96622.935681872899295, 568793.175604572985321 ], [ 108009.172973550084862, 588082.447104976279661 ], [ 107539.320132790831849, 562770.236678594490513 ] ] ] ] } }
+]
+}

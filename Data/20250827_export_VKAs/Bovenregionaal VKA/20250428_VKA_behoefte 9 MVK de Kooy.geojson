@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_behoefte 9 MVK de Kooy",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "id": null, "type": "Vliegbasis", "naam": "De Kooy" }, "geometry": { "type": "Point", "coordinates": [ 114223.551481546353898, 548833.946300080628134 ] } }
+]
+}

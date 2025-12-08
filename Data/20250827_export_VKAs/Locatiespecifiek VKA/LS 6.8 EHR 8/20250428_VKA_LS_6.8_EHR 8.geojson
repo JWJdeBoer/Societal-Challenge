@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_LS_6",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "objectid": null, "localtype": "Verboden", "sourceTxt": "Burgerluchtverkeer beperkte of verboden gebieden (Verboden voor open categorie)", "fuuid": "luchtvaartgebieden_zonder_natura2000.724ea6a2-e541-41bd-8395-afa7d776dbb3" }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 90632.42774699999427, 532391.307822 ], [ 85075.891225, 537104.940470000030473 ], [ 85502.325566, 566777.643668 ], [ 96621.052840000003926, 568794.596418999950401 ], [ 107539.307722, 562770.299975999980234 ], [ 111530.697339, 552933.228652999969199 ], [ 109846.040984, 542376.471353000029922 ], [ 107511.084421, 533125.072302000015043 ], [ 97347.353289000006043, 529525.165938999969512 ], [ 90632.42774699999427, 532391.307822 ] ] ] ] } }
+]
+}
