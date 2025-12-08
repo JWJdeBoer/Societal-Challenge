@@ -1,0 +1,14 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_behoefte 10 Stops",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "fid_1": 1.0, "id": 0.0, "locatietyp": "Kruis", "naam": "Vliegbasis Twente" }, "geometry": { "type": "Point", "coordinates": [ 256672.422021756996401, 477169.584010230610147 ] } },
+{ "type": "Feature", "properties": { "fid_1": 2.0, "id": null, "locatietyp": "Kruis", "naam": "Arnhemse heide" }, "geometry": { "type": "Point", "coordinates": [ 191526.616516586160287, 450889.755963240517303 ] } },
+{ "type": "Feature", "properties": { "fid_1": 3.0, "id": null, "locatietyp": "Vliegveld", "naam": "Deelen" }, "geometry": { "type": "Point", "coordinates": [ 188387.881054511206457, 453066.285833095549606 ] } },
+{ "type": "Feature", "properties": { "fid_1": 4.0, "id": null, "locatietyp": "Kruis", "naam": "Ederheide - Ginkelseheide" }, "geometry": { "type": "Point", "coordinates": [ 177677.784255383972777, 449995.416301083052531 ] } },
+{ "type": "Feature", "properties": { "fid_1": 5.0, "id": null, "locatietyp": "Kruis", "naam": "Stroese zand" }, "geometry": { "type": "Point", "coordinates": [ 177763.728013249812648, 468498.46652934839949 ] } },
+{ "type": "Feature", "properties": { "fid_1": 7.0, "id": null, "locatietyp": "Kruis", "naam": "Marknesse" }, "geometry": { "type": "Point", "coordinates": [ 188635.240535235934658, 524740.290326773538254 ] } },
+{ "type": "Feature", "properties": { "fid_1": 6.0, "id": null, "locatietyp": "Kruis", "naam": "ASK" }, "geometry": { "type": "Point", "coordinates": [ 190383.605776221607812, 490379.990494645840954 ] } }
+]
+}
