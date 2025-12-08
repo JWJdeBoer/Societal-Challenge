@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_LS_19",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "gml_id": null, "Naam": "Oude politieacademie", "Area ht": 5.5 }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 191224.158942478330573, 467474.376187942340039 ], [ 191406.920940308918944, 467706.906327058619354 ], [ 191538.862, 467600.943000000028405 ], [ 191343.052, 467347.84499999997206 ], [ 191207.873, 467452.5 ], [ 191224.158942478330573, 467474.376187942340039 ] ] ] ] } }
+]
+}
