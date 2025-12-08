@@ -11,13 +11,15 @@ gdf = gdf.merge(df, on="EAN", how="left")
 # 1. Filter rijen met geldige geometrie én Contractcapaciteit
 gdf_plot = gdf[gdf.geometry.notna() & gdf["Max ruimte opwek"].notna()].copy()
 
+
+
 # 2. Centroids van de polygonen (geeft Points)
 centroids = gdf_plot.geometry.centroid
 
 # 3. X, Y en waarden eruit trekken
 x = centroids.x.to_numpy()
 y = centroids.y.to_numpy()
-values = gdf_plot["Max ruimte opwek"].to_numpy()
+values = gdf_plot["Contractcapaciteit"].to_numpy()
 
 # 4. Scatter plot met kleur op basis van Contractcapaciteit
 fig, ax = plt.subplots(figsize=(10, 10))
