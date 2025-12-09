@@ -11,6 +11,5 @@ params = {
 
 url = f"{base_url}/query?{urlencode(params)}"
 gdf = gpd.read_file(url)
-
-print(gdf.head())
-print(gdf.crs)
+#
+# gdf.to_file("energieprojecten.gpkg", layer="projecten", driver="GPKG")
