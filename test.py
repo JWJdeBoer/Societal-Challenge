@@ -43,3 +43,12 @@ ax.set_xlabel("X")
 ax.set_ylabel("Y")
 
 plt.show()
+print(gdf.columns)
+print(gdf['Plaats'].value_counts()
+      )
+
+
+
+
+
+

@@ -72,6 +72,7 @@ combined_gdf = gpd.GeoDataFrame(
 )
 
 combined_gdf["geometry_orig"] = combined_gdf.geometry
+print(combined_gdf.columns)
 
 METRIC_COL = "Max ruimte opwek"        # bv. "Max ruimte verbruik" of "Max ruimte opwek"
 
