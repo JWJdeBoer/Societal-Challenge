@@ -9,6 +9,12 @@ gdf_bouwwerken = gpd.read_file("cleaned_data/bouwwerken.gpkg", layer="data")
 gdf_energieprojecten = gpd.read_file("cleaned_data/energieprojecten.gpkg", layer="data")
 combined_gdf = gpd.read_file("cleaned_data/combined.gpkg", layer="data")
 
+gdf_nl = gpd.read_file("Data/Netherlands_shapefile/nl_1km.shp")  # pas pad/naam aan
+
+
+
+
+
 # Plot alles gekleurd per 'source'
 # fig, ax = plt.subplots(figsize=(10, 12))
 #
@@ -91,12 +97,18 @@ if cluster_summaries:
         crs=energie.crs
     )
 else:
-    cluster_summary_gdf = gpd.GeoDataFrame(columns=["cluster_id", "energie_idx", "n_locatiespecifiek", "geometry"], crs=energie.crs)
-    cluster_members_gdf = gpd.GeoDataFrame(columns=list(energie.columns) + list(locspec.columns) + ["cluster_id", "role"], crs=energie.crs)
+    cluster_summary_gdf = gpd.GeoDataFrame(
+        columns=["cluster_id", "energie_idx", "n_locatiespecifiek", "geometry"],
+        crs=energie.crs
+    )
+    cluster_members_gdf = gpd.GeoDataFrame(
+        columns=list(energie.columns) + list(locspec.columns) + ["cluster_id", "role"],
+        crs=energie.crs
+    )
 
 print("Aantal energieproject-clusters met ≥1 Locatiespecifiek:", len(cluster_summary_gdf))
 
-
+# Globale plot van alle clusters
 fig, ax = plt.subplots(figsize=(10, 12))
 
 combined_gdf.plot(ax=ax, color="lightgrey", alpha=0.3)
@@ -146,4 +158,103 @@ else:
 
         print("--------------------------------------------------------")
 
+# =========================
+# Detail: inzoomen op één cluster (bijv. 16)
+# =========================
 
+CLUSTER_TO_ZOOM = 16  # pas dit aan naar een andere cluster_id als gewenst
+
+cluster_to_zoom = cluster_members_gdf[cluster_members_gdf["cluster_id"] == CLUSTER_TO_ZOOM]
+
+if cluster_to_zoom.empty:
+    print(f"\nGeen cluster gevonden met cluster_id = {CLUSTER_TO_ZOOM}")
+else:
+    print(f"\nDetailplot voor cluster_id = {CLUSTER_TO_ZOOM}")
+
+    fig, ax = plt.subplots(figsize=(8, 10))
+
+    # Optioneel: lichte achtergrond van alle data
+    combined_gdf.plot(ax=ax, color="lightgrey", alpha=0.2)
+
+    # Locatiespecifiek in dit cluster
+    cluster_to_zoom[cluster_to_zoom["role"] == "Locatiespecifiek"].plot(
+        ax=ax, color="red", markersize=40, label="Locatiespecifiek (cluster)"
+    )
+
+    # Energieproject(en) in dit cluster
+    cluster_to_zoom[cluster_to_zoom["role"] == "Energieproject"].plot(
+        ax=ax, color="blue", markersize=80, label="Energieproject (clustercenter)"
+    )
+
+    # Inzoomen op de bounding box van dit cluster
+    minx, miny, maxx, maxy = cluster_to_zoom.total_bounds
+    padding_x = (maxx - minx) * 0.1 or 100.0  # 10% marge, of een minimum
+    padding_y = (maxy - miny) * 0.1 or 100.0
+
+    ax.set_xlim(minx - padding_x, maxx + padding_x)
+    ax.set_ylim(miny - padding_y, maxy + padding_y)
+
+    ax.set_aspect("equal")
+    ax.set_title(f"Detailweergave cluster {CLUSTER_TO_ZOOM}")
+    ax.legend()
+    plt.show()
+
+    # 2. CRS afstemmen: neem het CRS van je cluster_members_gdf / combined_gdf
+    if gdf_nl.crs != combined_gdf.crs:
+        gdf_nl = gdf_nl.to_crs(combined_gdf.crs)
+
+    fig, ax = plt.subplots(figsize=(8, 10))
+
+    # 3. Nederland als achtergrond
+    gdf_nl.plot(
+        ax=ax,
+        color="whitesmoke",  # vulling
+        edgecolor="black",  # rand
+        linewidth=0.5,
+        alpha=1.0
+    )
+
+    # 4. Dan je eigen data (bijv. ingezoomd cluster)
+    cluster_to_zoom[cluster_to_zoom["role"] == "Locatiespecifiek"].plot(
+        ax=ax, color="red", markersize=40, label="Locatiespecifiek (cluster)"
+    )
+
+    cluster_to_zoom[cluster_to_zoom["role"] == "Energieproject"].plot(
+        ax=ax, color="blue", markersize=80, label="Energieproject (clustercenter)"
+    )
+
+    # 5. Inzoomen op bounding box van het cluster (of heel NL, als je dat wilt)
+    minx, miny, maxx, maxy = cluster_to_zoom.total_bounds
+    padding_x = (maxx - minx) * 0.1 or 100.0
+    padding_y = (maxy - miny) * 0.1 or 100.0
+
+    ax.set_xlim(minx - padding_x, maxx + padding_x)
+    ax.set_ylim(miny - padding_y, maxy + padding_y)
+
+    ax.set_aspect("equal")
+    ax.set_title(f"Detailweergave cluster {CLUSTER_TO_ZOOM} met Nederland als achtergrond")
+    ax.legend()
+    plt.show()
+
+CLUSTER_TO_EXPORT = 16
+subset = cluster_members_gdf[cluster_members_gdf["cluster_id"] == CLUSTER_TO_EXPORT].copy()
+
+if not subset.empty:
+    subset_wgs84 = subset.to_crs(epsg=4326)
+    subset_wgs84["lon"] = subset_wgs84.geometry.x
+    subset_wgs84["lat"] = subset_wgs84.geometry.y
+
+    cols_for_csv = []
+    for c in ["cluster_id", "role", "Naam", "Projectnaam", "source"]:
+        if c in subset_wgs84.columns:
+            cols_for_csv.append(c)
+    cols_for_csv += ["lon", "lat"]
+
+    subset_wgs84[cols_for_csv].to_csv(
+        f"cluster_{CLUSTER_TO_EXPORT}_punten_google_maps.csv",
+        index=False,
+        encoding="utf-8"
+    )
+    print(f"Cluster {CLUSTER_TO_EXPORT} geëxporteerd naar Google Maps CSV.")
+else:
+    print(f"Geen punten gevonden voor cluster_id = {CLUSTER_TO_EXPORT}")
