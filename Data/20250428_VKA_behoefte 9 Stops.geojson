@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_behoefte 9 Stops",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "id": null }, "geometry": { "type": "Point", "coordinates": [ 59067.627857556370145, 575988.564525024266914 ] } },
+{ "type": "Feature", "properties": { "id": null }, "geometry": { "type": "Point", "coordinates": [ 130512.861499385893694, 649451.8298991197953 ] } },
+{ "type": "Feature", "properties": { "id": null }, "geometry": { "type": "Point", "coordinates": [ 89718.49371123999299, 560757.989808996673673 ] } }
+]
+}

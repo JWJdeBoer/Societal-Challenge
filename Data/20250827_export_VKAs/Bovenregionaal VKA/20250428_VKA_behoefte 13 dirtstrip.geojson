@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_behoefte 13 dirtstrip",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "id": null }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 187938.910162448853953, 450925.695834683021531 ], [ 187627.76948511536466, 451013.204150183068123 ], [ 188500.713595395412995, 454117.005431178666186 ], [ 188811.854272728902288, 454029.497115678619593 ], [ 187938.910162448853953, 450925.695834683021531 ] ] ] ] } }
+]
+}

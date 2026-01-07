@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "20250428_VKA_behoefte 8 Lelystad Airport",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::28992" } },
+"features": [
+{ "type": "Feature", "properties": { "fid": 11.0, "uvid": null, "locatiecod": "Lelystad Airport", "aanmaak_ti": null, "update_tij": null, "complexcod": null, "defensie_o": null, "naam": "Lelystad Airport", "verkorte_n": null, "openbare_r": null, "huisnummer": null, "postcode": null, "woonplaats": null, "gemeente": null, "provincie": null, "rvb_regio": null, "landcode": null, "land": null, "complexfun": null, "departemen": null, "hoofdgebru": null, "oppervlakt": null, "omtrek": null, "lifecycle_": null, "wijzigings": null, "vastgoedvi": null, "wijzigin_1": null, "afstootsta": null, "wijzigin_2": null, "defensie_v": null, "defensie_g": null, "defensie_a": null, "wijzigin_3": null, "defensie_b": null, "wijzigin_4": null, "bgt_bronho": null, "utm_zone": null, "utm_block": null, "easting": null, "northing": null, "x_rdnew": null, "y_rdnew": null, "breedtegra": null, "lengtegraa": null, "bron": null, "wijzigin_5": null, "gewijzigd_": null, "aanmaakdat": null, "aangemaakt": null, "geoserver_": null, "opmerking": null, "asset_mana": null, "objectmana": null, "planjaar_o": null, "planjaar_1": null, "planjaar_a": null, "huisletter": null, "huisnumm_1": null, "Kansrijk": 1, "n": 1, "distance": 0.0, "feature_x": 163600.01548584021, "feature_y": 496098.93494115782, "nearest_x": 163600.01548584021, "nearest_y": 496098.93494115782 }, "geometry": { "type": "Point", "coordinates": [ 163600.015485840209294, 496098.934941157815047 ] } }
+]
+}
