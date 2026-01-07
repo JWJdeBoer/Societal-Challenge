@@ -118,3 +118,5 @@ gdf_locatiespecifiek.to_file("cleaned_data/Locatiespecifiek.gpkg", layer ="data"
 gdf_energieprojecten.to_file("cleaned_data/Energieprojecten.gpkg", layer ="data",driver="GPKG")
 gdf_bouwwerken.to_file("cleaned_data/Bouwwerken.gpkg", layer ="data",driver="GPKG")
 combined_gdf.to_file("cleaned_data/combined.gpkg", layer ="data",driver="GPKG")
+
+combined_gdf.to_csv("combined.csv")
