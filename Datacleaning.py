@@ -114,9 +114,16 @@ if gdf_energieprojecten.crs != gdf_bovenregionaal.crs:
 
 
 gdf_bovenregionaal.to_file("cleaned_data/Bovenregionaal.gpkg", layer ="data",driver="GPKG")
+print("Aantal regels in combined.csv:", len(gdf_bovenregionaal))
 gdf_locatiespecifiek.to_file("cleaned_data/Locatiespecifiek.gpkg", layer ="data",driver="GPKG")
+
+print("Aantal regels in combined.csv:", len(gdf_locatiespecifiek))
 gdf_energieprojecten.to_file("cleaned_data/Energieprojecten.gpkg", layer ="data",driver="GPKG")
+
+print("Aantal regels in combined.csv:", len(gdf_energieprojecten))
 gdf_bouwwerken.to_file("cleaned_data/Bouwwerken.gpkg", layer ="data",driver="GPKG")
+
+print("Aantal regels in combined.csv:", len(gdf_bouwwerken))
 combined_gdf.to_file("cleaned_data/combined.gpkg", layer ="data",driver="GPKG")
 
 combined_gdf.to_csv("combined.csv")
