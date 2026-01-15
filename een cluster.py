@@ -696,8 +696,8 @@ if __name__ == "__main__":
 
         algorithm="dbscan",
         eps_m=5000,
-        min_samples=2,
-        min_cluster_size=2,
+        min_samples=3,
+        min_cluster_size=3,
 
         min_per_source={
             # "Bouwwerk": 2,
