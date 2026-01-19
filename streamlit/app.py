@@ -1,23 +1,47 @@
 # app.py
-import io
 import os
 import streamlit as st
 import pandas as pd
-import geopandas as gpd
 
 from clustering_pipeline import (
     ClusterConfig,
+    OptimizationRule,
     run_return,
     plot_clusters,
     plot_top_n_clusters,
 )
 
 st.set_page_config(page_title="Clustering Tool", layout="wide")
-st.title("Geospatial clustering (DBSCAN / HDBSCAN)")
+st.title("Geospatial clustering voor het Rijksvastgoedbedrijf")
 
+# -----------------------------
+# Constants / UI options
+# -----------------------------
+SOURCE_OPTIONS = ["Bouwwerk", "Bovenregionaal", "Energieproject", "Locatiespecifiek"]
+DIR_OPTIONS = ["max", "min"]
+
+# Alleen deze features mogen in optimizer (en alleen voor Bouwwerk)
+BOUWWERK_FEATURES = [
+    "Contractcapaciteit",
+    "Aangevraagde Contractcapaciteit",
+    "Toekomstige contractcapaciteit",
+    "Maximaal piekvermogen",
+    "Verhoogde basislast",
+    "Vermogen laadpunten",
+    "WP vermogen",
+    "Max vermogen verbruik",
+    "Max ruimte verbruik",
+    "Oordeel verbruik",
+    "WP Zonnepanelen",
+    "Max ruimte opwek",
+    "Oordeel opwek",
+]
+
+
+# -----------------------------
+# Sidebar: Input
+# -----------------------------
 st.sidebar.header("Input")
-
-# --- INPUT: upload of pad ---
 use_upload = st.sidebar.checkbox("Upload CSV i.p.v. pad", value=True)
 
 uploaded = None
@@ -30,61 +54,134 @@ if use_upload:
         st.stop()
 else:
     input_csv_path = st.sidebar.text_input("Pad naar combined.csv", value="combined.csv")
+    if not os.path.exists(input_csv_path):
+        st.warning("Pad bestaat (nog) niet. Vul een correct pad in of gebruik upload.")
+        st.stop()
 
+
+# -----------------------------
+# Read minimal header/columns for UI (no preview table)
+# -----------------------------
+if uploaded is not None:
+    df_head = pd.read_csv(uploaded, nrows=5)
+    uploaded.seek(0)
+else:
+    df_head = pd.read_csv(input_csv_path, nrows=5)
+
+available_cols = set(df_head.columns)
+available_bouwwerk_features = [c for c in BOUWWERK_FEATURES if c in available_cols]
+
+
+# -----------------------------
+# Sidebar: Clustering settings
+# -----------------------------
 st.sidebar.header("Clustering instellingen")
-
 algorithm = st.sidebar.selectbox("Algorithm", ["dbscan", "hdbscan"], index=0)
-eps_m = st.sidebar.slider("eps (meters)", min_value=50, max_value=20000, value=5000, step=50)
-min_samples = st.sidebar.slider("min_samples", min_value=1, max_value=50, value=3, step=1)
-min_cluster_size = st.sidebar.slider("min_cluster_size (filter achteraf)", min_value=1, max_value=50, value=3, step=1)
-target_n_clusters = st.sidebar.slider("Aantal clusters (top-N selectie)", min_value=1, max_value=50, value=10, step=1)
 
+eps_m = st.sidebar.slider(
+    "Maximale afstand tussen gebouwen in meters",
+    min_value=50, max_value=20000, value=5000, step=50
+)
+
+min_samples = st.sidebar.slider(
+    "Minimaal aantal gebouwen voor een cluster",
+    min_value=1, max_value=50, value=3, step=1
+)
+
+target_n_clusters = st.sidebar.slider(
+    "Laat de top N clusters zien",
+    min_value=1, max_value=50, value=10, step=1
+)
+
+# Afgeleide waarden (jouw wens)
+min_cluster_size = int(min_samples)           # filter achteraf altijd gelijk aan min_samples
+top_n_plot = int(target_n_clusters)           # Top-N plot altijd gelijk aan target_n_clusters
+
+show_plots = st.sidebar.checkbox("Toon plots", value=True)
+
+
+# -----------------------------
+# Sidebar: Filters
+# -----------------------------
 st.sidebar.header("Filters")
 
-exclude_sources_txt = st.sidebar.text_input(
-    "exclude_sources (komma-gescheiden)",
-    value="Bouwwerk,Bovenregionaal"
+exclude_sources = st.sidebar.multiselect(
+    "Dit type locaties niet meenemen",
+    options=SOURCE_OPTIONS,
+    default=["Bouwwerk", "Bovenregionaal"],
 )
 
-# min_per_source als simpele invoer: "Locatiespecifiek=1,Energieproject=1"
-min_per_source_txt = st.sidebar.text_input(
-    "min_per_source (bv: Locatiespecifiek=1,Energieproject=1)",
-    value="Locatiespecifiek=1,Energieproject=1"
-)
+st.sidebar.caption("Minimaal aantal locaties per locatietype binnen een cluster.")
+min_per_source = {}
+for s in SOURCE_OPTIONS:
+    val = st.sidebar.number_input(
+        f"minimaal aantal: {s}",
+        min_value=0,
+        max_value=999,
+        value=0 if s in ["Bouwwerk", "Bovenregionaal"] else 1,
+        step=1,
+    )
+    if int(val) > 0:
+        min_per_source[s] = int(val)
 
-make_plot = st.sidebar.checkbox("Maak plot", value=True)
-top_n_plot = st.sidebar.slider("Top-N plot", min_value=1, max_value=20, value=5, step=1)
 
-# ---------- Helpers ----------
-def parse_exclude_sources(s: str):
-    return [x.strip() for x in s.split(",") if x.strip()]
+# -----------------------------
+# Sidebar: Optimization rule (alleen Bouwwerk)
+# - agg altijd SUM
+# - weight via belangrijkheid (0.5/1.0/1.5)
+# -----------------------------
+st.sidebar.header("Optimalisatie (alleen Bouwwerk)")
+use_opt_rule = st.sidebar.checkbox("Gebruik optimalisatie op", value=False)
 
-def parse_min_per_source(s: str):
-    out = {}
-    s = s.strip()
-    if not s:
-        return out
-    parts = [p.strip() for p in s.split(",") if p.strip()]
-    for p in parts:
-        if "=" not in p:
-            continue
-        k, v = p.split("=", 1)
-        k = k.strip()
-        v = v.strip()
-        if k and v.isdigit():
-            out[k] = int(v)
-    return out
+opt_rules = []
+if use_opt_rule:
+    if not available_bouwwerk_features:
+        st.sidebar.warning("Geen Bouwwerk-feature kolommen gevonden in je CSV.")
+    else:
+        opt_column = st.sidebar.selectbox(
+            "Bouwwerk feature (kolom)",
+            options=available_bouwwerk_features,
+        )
 
-# ---------- Load CSV (upload -> tijdelijke file) ----------
-tmp_csv_path = None
+        opt_dir = st.sidebar.selectbox("Richting (max/min)", options=DIR_OPTIONS, index=0)
+
+        importance_label = st.sidebar.radio(
+            "Belangrijkheid",
+            options=["Niet belangrijk", "Belangrijk", "Zeer belangrijk"],
+            index=1,
+            horizontal=True
+        )
+        importance_map = {
+            "Niet belangrijk": 0.5,
+            "Belangrijk": 1.0,
+            "Zeer belangrijk": 1.5
+        }
+        opt_weight = importance_map[importance_label]
+
+        opt_rules = [
+            OptimizationRule(
+                source="Bouwwerk",
+                column=opt_column,
+                agg="sum",           # vast
+                direction=opt_dir,   # type: ignore
+                weight=float(opt_weight),
+            )
+        ]
+
+
+# -----------------------------
+# Handle upload -> temp file (pipeline verwacht pad)
+# -----------------------------
 if uploaded is not None:
-    # Streamlit file_uploader geeft bytes; we schrijven naar temp file zodat jouw pipeline het kan lezen
-    tmp_csv_path = os.path.join(st.session_state.get("tmpdir", "."), "uploaded_combined.csv")
+    tmp_csv_path = "uploaded_combined.csv"
     with open(tmp_csv_path, "wb") as f:
         f.write(uploaded.getbuffer())
     input_csv_path = tmp_csv_path
 
-# ---------- Build config ----------
+
+# -----------------------------
+# Build config
+# -----------------------------
 cfg = ClusterConfig(
     input_csv=input_csv_path,
     algorithm=algorithm,
@@ -92,64 +189,112 @@ cfg = ClusterConfig(
     min_samples=int(min_samples),
     min_cluster_size=int(min_cluster_size),
     target_n_clusters=int(target_n_clusters),
-    exclude_sources=parse_exclude_sources(exclude_sources_txt),
-    min_per_source=parse_min_per_source(min_per_source_txt),
-    make_plot=False,  # we doen plotting hier, niet inside run()
+    exclude_sources=exclude_sources,
+    min_per_source=min_per_source,
+    optimization_rules=opt_rules,
+    make_plot=False,  # plots doen we in Streamlit
 )
 
-st.subheader("Config preview")
-st.json({
-    "input_csv": cfg.input_csv,
-    "algorithm": cfg.algorithm,
-    "eps_m": cfg.eps_m,
-    "min_samples": cfg.min_samples,
-    "min_cluster_size": cfg.min_cluster_size,
-    "target_n_clusters": cfg.target_n_clusters,
-    "exclude_sources": cfg.exclude_sources,
-    "min_per_source": cfg.min_per_source,
-})
 
-# ---------- Run button ----------
-run_btn = st.button("Run clustering")
+# -----------------------------
+# Run
+# -----------------------------
+run_btn = st.button("Start clustering")
 
 if run_btn:
     with st.spinner("Clustering draait..."):
         points_proj, clusters_wgs84 = run_return(cfg)
 
-    st.success("Klaar!")
+    st.success("De clusters zijn gevonden!")
 
-    col1, col2 = st.columns(2)
+    # ---- OUTPUT: cluster summary ----
+    st.subheader("De gevonden clusters")
+    if clusters_wgs84.empty:
+        st.warning("Geen clusters gevonden na filtering/top-N.")
+    else:
+        show_cols = [c for c in [
+            "rank", "cluster_id", "n_points", "score", "score_norm", "centroid_lat", "centroid_lon"
+        ] if c in clusters_wgs84.columns]
+        show_cols += [c for c in clusters_wgs84.columns if c.startswith("n_")]
 
-    with col1:
-        st.subheader("Cluster summary (top-N)")
-        if clusters_wgs84.empty:
-            st.warning("Geen clusters gevonden na filtering/top-N.")
+        extra_cols = [
+            "sum_pairwise_dist_m",
+            "mean_pairwise_dist_m",
+            "mean_opwek_to_others_m",
+            "sum_opwek_kw",
+            "sum_max_ruimte_verbruik_kw",
+            "vrije_ruimte_kw",
+        ]
+        show_cols += [c for c in extra_cols if c in clusters_wgs84.columns]
+
+        # verwijder dubbele kolommen vóór display (Streamlit/PyArrow eis)
+        clusters_wgs84 = clusters_wgs84.loc[:, ~clusters_wgs84.columns.duplicated()].copy()
+
+        # dedupe show_cols
+        seen = set()
+        show_cols = [c for c in show_cols if not (c in seen or seen.add(c))]
+
+        st.dataframe(
+            clusters_wgs84[show_cols].sort_values("rank"),
+            use_container_width=True
+        )
+
+    # ---- OUTPUT: punten per cluster (expanders), excl noise (-1) ----
+    st.subheader("Punten per cluster")
+
+    points_table = points_proj.drop(columns=["geometry"], errors="ignore").copy()
+
+    if "cluster_id" not in points_table.columns:
+        st.warning("Geen cluster_id kolom gevonden in punten output.")
+    else:
+        clustered_only = points_table[points_table["cluster_id"] != -1].copy()
+
+        if clustered_only.empty:
+            st.info("Geen punten in clusters (alles is noise of weggefilterd).")
         else:
-            show_cols = [c for c in [
-                "rank","cluster_id","n_points","score","score_norm","centroid_lat","centroid_lon"
-            ] if c in clusters_wgs84.columns]
-            # voeg n_<source> kolommen toe
-            show_cols += [c for c in clusters_wgs84.columns if c.startswith("n_")]
-            st.dataframe(clusters_wgs84[show_cols].sort_values("rank"))
+            clustered_only["cluster_id"] = clustered_only["cluster_id"].astype(int)
+            cluster_ids = sorted(clustered_only["cluster_id"].unique().tolist())
 
-    with col2:
-        st.subheader("Punten (preview)")
-        st.dataframe(points_proj.drop(columns=["geometry"], errors="ignore").head(50))
+            # cluster_id vooraan
+            cols = ["cluster_id"] + [c for c in clustered_only.columns if c != "cluster_id"]
+            clustered_only = clustered_only[cols]
 
-    # ---------- Plot ----------
-    if make_plot and not clusters_wgs84.empty:
-        st.subheader("Plot clusters (alle geselecteerde clusters)")
-        fig_all = plot_clusters(points_proj, cfg)
-        st.pyplot(fig_all)
+            for cid in cluster_ids:
+                df_c = clustered_only[clustered_only["cluster_id"] == cid].copy()
 
-        st.subheader(f"Plot top {top_n_plot} clusters")
-        fig_top = plot_top_n_clusters(points_proj, clusters_wgs84, n=top_n_plot)
-        st.pyplot(fig_top)
+                # Verwijder lege kolommen per cluster
+                df_c = df_c.dropna(axis=1, how="all")
 
-    # ---------- Downloads ----------
+                n = len(df_c)
+                src_summary = ""
+                if "source" in df_c.columns:
+                    vc = df_c["source"].value_counts(dropna=False)
+                    src_summary = " | " + ", ".join([f"{k}: {int(v)}" for k, v in vc.items()])
+
+                with st.expander(f"Cluster {cid} — {n} punten{src_summary}", expanded=False):
+                    st.dataframe(df_c, use_container_width=True)
+
+    # ---- PLOTS (optioneel) ----
+    if show_plots and not clusters_wgs84.empty:
+        st.subheader("Plots")
+
+        colA, colB = st.columns(2)
+
+        with colA:
+            st.markdown("**Alle geselecteerde clusters**")
+            fig_all = plot_clusters(points_proj, cfg)
+            fig_all.set_size_inches(6, 6)
+            st.pyplot(fig_all, use_container_width=True)
+
+        with colB:
+            st.markdown(f"**Top {top_n_plot} clusters**")
+            fig_top = plot_top_n_clusters(points_proj, clusters_wgs84, n=top_n_plot)
+            fig_top.set_size_inches(6, 6)
+            st.pyplot(fig_top, use_container_width=True)
+
+    # ---- DOWNLOADS ----
     st.subheader("Downloads")
 
-    # points CSV (wkt)
     points_wgs84 = points_proj.to_crs(epsg=4326).copy()
     points_wgs84["lon"] = points_wgs84.geometry.x
     points_wgs84["lat"] = points_wgs84.geometry.y
@@ -160,10 +305,9 @@ if run_btn:
         "Download points_with_clusters.csv",
         data=points_csv,
         file_name="points_with_clusters.csv",
-        mime="text/csv"
+        mime="text/csv",
     )
 
-    # clusters CSV (wkt)
     clusters_out = clusters_wgs84.copy()
     clusters_out["geometry_wkt"] = clusters_out.geometry.apply(lambda g: g.wkt if g is not None else None)
     clusters_csv = clusters_out.drop(columns=["geometry"], errors="ignore").to_csv(index=False).encode("utf-8")
@@ -172,5 +316,5 @@ if run_btn:
         "Download cluster_summary.csv",
         data=clusters_csv,
         file_name="cluster_summary.csv",
-        mime="text/csv"
+        mime="text/csv",
     )

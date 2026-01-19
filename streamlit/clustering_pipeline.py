@@ -57,7 +57,7 @@ class OptimizationRule:
 @dataclass
 class ClusterConfig:
     # Input
-    input_csv: str = "combined.csv"  # zet naar jouw pad in PyCharm indien nodig
+    input_csv: str = "combined.csv"
     geometry_col: str = "geometry"
     source_col: str = "source"
     assumed_input_crs_epsg: int = 28992  # RD New
@@ -70,7 +70,6 @@ class ClusterConfig:
 
     # Constraints
     min_per_source: Dict[str, int] = field(default_factory=dict)
-
     exclude_sources: List[str] = field(default_factory=list)
 
     required_points: List[RequiredPoint] = field(default_factory=list)
@@ -80,7 +79,7 @@ class ClusterConfig:
     target_n_clusters: Optional[int] = 10
 
     # Score/optimalisatie regels (gebruikt bij top-N selectie)
-    # Als leeg -> default score = n_points
+    # Als leeg -> default score = n_points + compactness bonus
     optimization_rules: List[OptimizationRule] = field(default_factory=list)
 
     # Exports
@@ -89,11 +88,8 @@ class ClusterConfig:
     out_clusters_csv: str = "cluster_summary.csv"
     out_gpkg: str = "clusters.gpkg"
 
-    # Visualisatie
+    # Visualisatie (alleen voor CLI run)
     make_plot: bool = True
-    top_n_plot: int = 5          # top-N clusters samen in 1 plot
-    top_k_export: int = 3        # export alle punten (hele rijen) voor top-K clusters
-    per_cluster_plot_n: int = 5  # losse plots per cluster voor top-N
 
 
 # =========================
@@ -284,24 +280,21 @@ def _apply_agg(series: pd.Series, agg: Agg) -> float:
         return float(s.notna().sum())
     raise ValueError(f"Onbekende agg: {agg}")
 
+
 def compute_cluster_compactness(grp: gpd.GeoDataFrame) -> float:
-    """
-    Berekent gemiddelde afstand (in meters) van punten tot cluster-centroid.
-    Lager = compacter cluster.
-    """
+    """Gemiddelde afstand (m) van punten tot centroid. Lager = compacter."""
     if grp.empty:
         return float("inf")
-
     centroid = grp.geometry.union_all().centroid
     dists = grp.geometry.distance(centroid)
     return float(dists.mean())
 
+
 def score_clusters(points_proj: gpd.GeoDataFrame, cluster_ids: List[int], cfg: ClusterConfig) -> pd.DataFrame:
     """
     Score per cluster.
-    - Als optimization_rules leeg: score = n_points
+    - Als optimization_rules leeg: score = n_points + compactness bonus
     - Anders: som van (rule.weight * signed(metric))
-      waarbij signed positief is voor direction='max' en negatief voor 'min'
     """
     rows = []
     for cid in cluster_ids:
@@ -312,21 +305,18 @@ def score_clusters(points_proj: gpd.GeoDataFrame, cluster_ids: List[int], cfg: C
         if not cfg.optimization_rules:
             n_points = float(len(grp))
             compactness = compute_cluster_compactness(grp)
-
-            # omdeling zodat "compacter = hogere score"
             compactness_score = 1.0 / (compactness + 1e-6)
 
-            # gewichten (kun je tunen)
-            alpha = 1.0  # gewicht voor grootte
-            beta = 1000.0  # gewicht voor compactheid (schaal!)
+            alpha = 1.0
+            beta = 1000.0
 
             score = alpha * n_points + beta * compactness_score
 
             rows.append({
-                "cluster_id": cid,
+                "cluster_id": int(cid),
                 "score": float(score),
-                "n_points": n_points,
-                "compactness_m": compactness,
+                "n_points": float(n_points),
+                "compactness_m": float(compactness),
             })
             continue
 
@@ -339,8 +329,6 @@ def score_clusters(points_proj: gpd.GeoDataFrame, cluster_ids: List[int], cfg: C
                 val = 0.0
             else:
                 if rule.column is None:
-                    # alleen toegestaan als je 'count_nonnull' wil, maar dan heb je nog steeds een kolom nodig;
-                    # we houden het simpel: geen kolom => 0
                     val = 0.0
                 else:
                     val = _apply_agg(sub[rule.column], rule.agg)
@@ -348,9 +336,141 @@ def score_clusters(points_proj: gpd.GeoDataFrame, cluster_ids: List[int], cfg: C
             signed = val if rule.direction == "max" else -val
             total_score += float(rule.weight) * signed
 
-        rows.append({"cluster_id": cid, "score": float(total_score)})
+        rows.append({"cluster_id": int(cid), "score": float(total_score)})
 
     return pd.DataFrame(rows)
+
+def _pairwise_sum_mean_m(grp: gpd.GeoDataFrame) -> Tuple[float, float]:
+    """
+    Retourneert:
+      - sum_pairwise_dist_m: som van afstanden over alle unieke puntparen (i<j)
+      - mean_pairwise_dist_m: gemiddelde afstand over alle unieke puntparen (i<j)
+
+    Let op: O(n^2). Voor grote clusters wordt gesampled om het beheersbaar te houden.
+    """
+    n = len(grp)
+    if n < 2:
+        return 0.0, 0.0
+
+    coords = np.column_stack([grp.geometry.x.values, grp.geometry.y.values])
+
+    # sampling om O(n^2) te beperken bij hele grote clusters
+    MAX_N = 1500
+    if n > MAX_N:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(n, size=MAX_N, replace=False)
+        coords = coords[idx]
+        n = MAX_N
+
+    chunk = 500
+    sum_dist = 0.0
+    count = 0
+
+    for i0 in range(0, n, chunk):
+        i1 = min(i0 + chunk, n)
+        A = coords[i0:i1]  # (a,2)
+
+        diff = A[:, None, :] - coords[None, :, :]   # (a,n,2)
+        dist = np.sqrt((diff ** 2).sum(axis=2))     # (a,n)
+
+        # alleen bovenste driehoek i<j
+        for local_i, global_i in enumerate(range(i0, i1)):
+            if global_i + 1 < n:
+                upper = dist[local_i, global_i + 1:]
+                if upper.size:
+                    sum_dist += float(upper.sum())
+                    count += int(upper.size)
+
+    mean_dist = (sum_dist / count) if count > 0 else 0.0
+    return float(sum_dist), float(mean_dist)
+
+def _mean_distance_from_energy_to_others_m(grp: gpd.GeoDataFrame, source_col: str) -> Optional[float]:
+    """
+    Als er Energieproject-punten aanwezig zijn:
+      gemiddelde afstand van Energieproject-punten naar alle NIET-Energieproject punten.
+
+    Retourneert None als er geen Energieproject punten zijn, of geen 'andere' punten.
+    """
+    if source_col not in grp.columns:
+        return None
+
+    energy = grp[grp[source_col] == "Energieproject"]
+    others = grp[grp[source_col] != "Energieproject"]
+
+    if energy.empty or others.empty:
+        return None
+
+    E = np.column_stack([energy.geometry.x.values, energy.geometry.y.values])
+    O = np.column_stack([others.geometry.x.values, others.geometry.y.values])
+
+    # chunken voor geheugen (E x O kan groot worden)
+    chunk = 500
+    sum_dist = 0.0
+    count = 0
+
+    for i0 in range(0, len(E), chunk):
+        i1 = min(i0 + chunk, len(E))
+        A = E[i0:i1]  # (a,2)
+
+        diff = A[:, None, :] - O[None, :, :]   # (a, m, 2)
+        dist = np.sqrt((diff ** 2).sum(axis=2))  # (a, m)
+
+        sum_dist += float(dist.sum())
+        count += int(dist.size)
+
+    return float(sum_dist / count) if count > 0 else None
+
+
+
+def _free_electric_space_kw(
+    grp: gpd.GeoDataFrame,
+    source_col: str,
+    pv_capacity_factor: float = 0.12,
+) -> Tuple[float, float, float]:
+    """
+    Berekent vrije elektriciteitsruimte in kW.
+
+    Aannames:
+    - Energieproject 'opwek' is in MWp (geïnstalleerd piekvermogen)
+    - Effectieve opwek (kW) = MWp * 1000 * capaciteitsfactor
+    - Bouwwerk 'Max ruimte verbruik' is in kW (mag negatief zijn)
+
+    Retourneert:
+    - sum_effective_opwek_kw
+    - sum_max_ruimte_verbruik_kw
+    - vrije_ruimte_kw = opwek + max_ruimte_verbruik
+    """
+
+    sum_effective_opwek_kw = 0.0
+    sum_max_ruimte_verbruik_kw = 0.0
+
+    if source_col not in grp.columns:
+        return 0.0, 0.0, 0.0
+
+    # --------------------
+    # Energieproject: opwek (MWp -> kW)
+    # --------------------
+    ep = grp[grp[source_col] == "Energieproject"]
+    if not ep.empty and "opwek" in ep.columns:
+        opwek_mwp = pd.to_numeric(ep["opwek"], errors="coerce").fillna(0.0)
+        sum_effective_opwek_kw = float((opwek_mwp * 1000.0 * pv_capacity_factor).sum())
+
+    # --------------------
+    # Bouwwerk: Max ruimte verbruik (kW)
+    # --------------------
+    bw = grp[grp[source_col] == "Bouwwerk"]
+    if not bw.empty and "Max ruimte verbruik" in bw.columns:
+        sum_max_ruimte_verbruik_kw = float(
+            pd.to_numeric(bw["Max ruimte verbruik"], errors="coerce").fillna(0.0).sum()
+        )
+
+    vrije_ruimte_kw = sum_effective_opwek_kw + sum_max_ruimte_verbruik_kw
+    return (
+        float(sum_effective_opwek_kw),
+        float(sum_max_ruimte_verbruik_kw),
+        float(vrije_ruimte_kw),
+    )
+
 
 
 def summarize_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -372,17 +492,43 @@ def summarize_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> Tup
         centroid_proj = hull.centroid
         minx, miny, maxx, maxy = grp.total_bounds
 
+
+
+        # (2) Vrije elektriciteitsruimte (kW)
+        sum_opwek_kw, sum_maxruimte_verbruik_kw, vrije_ruimte_kw = _free_electric_space_kw(grp, cfg.source_col)
+
         src_counts = grp[cfg.source_col].value_counts(dropna=False).to_dict() if cfg.source_col in grp.columns else {}
+
+        sum_pairwise_m, mean_pairwise_m = _pairwise_sum_mean_m(grp)
+        mean_opwek_to_others_m = _mean_distance_from_energy_to_others_m(grp, cfg.source_col)
 
         rows.append(
             {
                 "cluster_id": int(cid),
                 "n_points": int(len(grp)),
+                "sum_pairwise_dist_m": float(sum_pairwise_m),
+
+                "mean_opwek_to_others_m": float(
+                    mean_opwek_to_others_m) if mean_opwek_to_others_m is not None else np.nan,
+
+                # bounding box in projected CRS
                 "bbox_minx": float(minx),
                 "bbox_miny": float(miny),
                 "bbox_maxx": float(maxx),
                 "bbox_maxy": float(maxy),
+
+                # centroid (projected)
                 "geometry": centroid_proj,
+
+                # nieuwe afstandsattributen
+                "mean_pairwise_dist_m": float(mean_pairwise_m),
+
+
+                # nieuwe energie-attributen
+                "sum_opwek_kw": float(sum_opwek_kw),
+                "sum_max_ruimte_verbruik_kw": float(sum_maxruimte_verbruik_kw),
+                "vrije_ruimte_kw": float(vrije_ruimte_kw),
+
                 "src_counts": src_counts,
             }
         )
@@ -409,6 +555,11 @@ def summarize_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> Tup
     if not cluster_wgs84.empty:
         candidate_ids = cluster_wgs84["cluster_id"].astype(int).tolist()
         scores = score_clusters(points, candidate_ids, cfg)
+
+        # ✅ voorkomen dubbele kolommen bij merge (n_points bestaat al in cluster_wgs84)
+        if "n_points" in scores.columns:
+            scores = scores.drop(columns=["n_points"])
+
         cluster_wgs84 = cluster_wgs84.merge(scores, on="cluster_id", how="left")
 
         if cfg.target_n_clusters is not None:
@@ -423,10 +574,7 @@ def summarize_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> Tup
 
 
 def add_normalized_scores(clusters_summary: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """
-    Voeg score_norm (0-1) toe via min-max normalisatie.
-    Rank 1 = hoogste score.
-    """
+    """Voeg score_norm (0-1) en rank toe."""
     out = clusters_summary.copy()
     if out.empty:
         return out
@@ -470,7 +618,7 @@ def export_results(points_proj: gpd.GeoDataFrame, clusters_wgs84: gpd.GeoDataFra
     c_out.drop(columns=["geometry"], inplace=True, errors="ignore")
     c_out.to_csv(clusters_csv, index=False)
 
-    # GeoPackage (optioneel, maar handig)
+    # GeoPackage
     points_proj.to_file(gpkg, layer="points", driver="GPKG")
     clusters_wgs84.to_file(gpkg, layer="cluster_centroids_wgs84", driver="GPKG")
 
@@ -479,54 +627,11 @@ def export_results(points_proj: gpd.GeoDataFrame, clusters_wgs84: gpd.GeoDataFra
     print(f"[OK] {gpkg}")
 
 
-def export_top_k_cluster_points(
-    points_proj: gpd.GeoDataFrame,
-    clusters_summary: gpd.GeoDataFrame,
-    k: int,
-    out_dir: str,
-    prefix: str = "top",
-) -> pd.DataFrame:
-    """
-    Exporteer de volledige rijen (alle kolommen) van punten in de top-k clusters.
-    Maakt:
-      - 1 CSV per cluster
-      - 1 gecombineerde CSV met alle top-k punten
-    """
-    os.makedirs(out_dir, exist_ok=True)
-
-    if clusters_summary.empty:
-        print("Geen clusters om te exporteren.")
-        return pd.DataFrame()
-
-    sort_col = "score" if "score" in clusters_summary.columns else "n_points"
-    top = clusters_summary.sort_values(sort_col, ascending=False).head(k)
-    top_ids = top["cluster_id"].astype(int).tolist()
-
-    points_wgs84 = points_proj.to_crs(epsg=4326).copy()
-    points_wgs84["lon"] = points_wgs84.geometry.x
-    points_wgs84["lat"] = points_wgs84.geometry.y
-    points_wgs84["geometry_wkt"] = points_wgs84.geometry.apply(lambda g: g.wkt if g is not None else None)
-
-    all_top = points_wgs84[points_wgs84["cluster_id"].isin(top_ids)].copy()
-
-    combined_path = os.path.join(out_dir, f"{prefix}{k}_points_all.csv")
-    all_top.drop(columns=["geometry"], errors="ignore").to_csv(combined_path, index=False)
-    print(f"[OK] Export alle top-{k} clusterpunten: {combined_path}")
-
-    for cid in top_ids:
-        df_c = all_top[all_top["cluster_id"] == cid].copy()
-        path = os.path.join(out_dir, f"{prefix}{k}_cluster_{cid}_points.csv")
-        df_c.drop(columns=["geometry"], errors="ignore").to_csv(path, index=False)
-        print(f"[OK] Export cluster {cid}: {path} ({len(df_c)} punten)")
-
-    return all_top.drop(columns=["geometry"], errors="ignore")
-
-
 # =========================
-# Plotting
+# Plotting (Streamlit-friendly: return fig)
 # =========================
 
-def plot_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> None:
+def plot_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig):
     g = points_proj.copy()
     clustered = g[g["cluster_id"] != -1]
     noise = g[g["cluster_id"] == -1]
@@ -542,32 +647,13 @@ def plot_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> None:
     plt.tight_layout()
     return fig
 
-def run_return(cfg: ClusterConfig):
-    gdf = load_combined_csv(cfg)
-    gdf = ensure_single_point_per_feature(gdf)
 
-    if cfg.exclude_sources:
-        gdf = gdf[~gdf[cfg.source_col].isin(cfg.exclude_sources)].copy()
-
-    gdf_proj, _ = to_projected_for_meters(gdf)
-    gdf_proj = cluster_points(gdf_proj, cfg)
-    gdf_proj = enforce_required_points(gdf_proj, cfg)
-
-    points_proj, clusters_wgs84 = summarize_clusters(gdf_proj, cfg)
-    clusters_wgs84 = add_normalized_scores(clusters_wgs84)
-
-    return points_proj, clusters_wgs84
-
-def plot_top_n_clusters(
-    points_proj: gpd.GeoDataFrame,
-    clusters_summary: gpd.GeoDataFrame,
-    n: int = 5,
-    title: Optional[str] = None,
-):
-    """Plot alleen de top-N clusters (op basis van score of n_points)."""
+def plot_top_n_clusters(points_proj: gpd.GeoDataFrame, clusters_summary: gpd.GeoDataFrame, n: int = 5, title: Optional[str] = None):
     if clusters_summary.empty:
-        print("Geen clusters om te plotten.")
-        return
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.set_title("Geen clusters om te plotten.")
+        ax.set_axis_off()
+        return fig
 
     sort_col = "score" if "score" in clusters_summary.columns else "n_points"
     top_clusters = clusters_summary.sort_values(sort_col, ascending=False).head(n)
@@ -584,166 +670,56 @@ def plot_top_n_clusters(
     return fig
 
 
-def plot_each_cluster(
-    points_proj: gpd.GeoDataFrame,
-    clusters_summary: gpd.GeoDataFrame,
-    n: int,
-    out_dir: str,
-    dpi: int = 200,
-):
-    """Maak per cluster (top-n) een losse plot en sla op als PNG."""
-    os.makedirs(out_dir, exist_ok=True)
-
-    if clusters_summary.empty:
-        print("Geen clusters om te plotten.")
-        return
-
-    sort_col = "score" if "score" in clusters_summary.columns else "n_points"
-    top = clusters_summary.sort_values(sort_col, ascending=False).head(n)
-    top_ids = top["cluster_id"].astype(int).tolist()
-
-    for cid in top_ids:
-        pts = points_proj[points_proj["cluster_id"] == cid].copy()
-        if pts.empty:
-            continue
-
-        fig, ax = plt.subplots(figsize=(8, 8))
-        pts.plot(ax=ax, markersize=25, alpha=0.8)
-
-        row = top[top["cluster_id"] == cid].iloc[0]
-        score_txt = f"score={row['score']:.2f}" if "score" in row else f"n_points={row['n_points']}"
-        norm_txt = f", score_norm={row['score_norm']:.2f}" if "score_norm" in row else ""
-
-        ax.set_title(f"Cluster {cid} | {score_txt}{norm_txt}")
-        ax.set_axis_off()
-        plt.tight_layout()
-
-        out_path = os.path.join(out_dir, f"cluster_{cid}.png")
-        # fig.savefig(out_path, dpi=dpi)
-        return fig   # ook interactief tonen
-        plt.close(fig)
-
-        print(f"[OK] Plot opgeslagen: {out_path}")
-
-
 # =========================
 # Main pipeline
 # =========================
 
-def run(cfg: ClusterConfig) -> None:
-    # Load + single-point enforcement
+def run_return(cfg: ClusterConfig) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """Voor Streamlit: return points + clusters (geen files, geen plt.show)."""
     gdf = load_combined_csv(cfg)
     gdf = ensure_single_point_per_feature(gdf)
 
-    if cfg.exclude_sources:
+    if cfg.exclude_sources and cfg.source_col in gdf.columns:
         gdf = gdf[~gdf[cfg.source_col].isin(cfg.exclude_sources)].copy()
 
-    print("Aantal features in GeoDataFrame:", len(gdf))
-    print("Aantal Point-geometries:", (gdf.geometry.geom_type == "Point").sum())
-
-    # Project for meters
     gdf_proj, _ = to_projected_for_meters(gdf)
-
-    # Cluster + enforce required points
     gdf_proj = cluster_points(gdf_proj, cfg)
     gdf_proj = enforce_required_points(gdf_proj, cfg)
 
-    # Summaries + filters + top-N selection
     points_proj, clusters_wgs84 = summarize_clusters(gdf_proj, cfg)
-
-    # Add normalized score + rank for explanation
     clusters_wgs84 = add_normalized_scores(clusters_wgs84)
+    return points_proj, clusters_wgs84
 
-    print(f"\nClusters na filtering/top-N: {len(clusters_wgs84)}")
-    if not clusters_wgs84.empty:
-        # uitleg / inspectie
-        cols = ["rank", "cluster_id", "n_points", "score", "score_norm", "centroid_lat", "centroid_lon"]
-        src_cols = [c for c in clusters_wgs84.columns if c.startswith("n_")]
-        cols = [c for c in cols if c in clusters_wgs84.columns] + src_cols
 
-        print("\nRanking (rank 1 = hoogste score):")
-        print(clusters_wgs84[cols].sort_values("rank").head(20))
-
-        # korte uitleg voor jezelf / verslag
-        if cfg.optimization_rules:
-            r0 = cfg.optimization_rules[0]
-            print(
-                "\nScoring-uitleg:\n"
-                f"- score = gewogen som over optimization_rules.\n"
-                f"- In jouw geval (voorbeeld): {r0.agg} van kolom '{r0.column}' "
-                f"voor source='{r0.source}' met direction='{r0.direction}'.\n"
-                "- rank 1 = hoogste score.\n"
-                "- score_norm = min-max normalisatie van score naar [0,1] binnen de geselecteerde clusters."
-            )
-        else:
-            print(
-                "\nScoring-uitleg:\n"
-                "- Geen optimization_rules opgegeven, dus score = n_points.\n"
-                "- rank 1 = grootste cluster.\n"
-                "- score_norm = min-max normalisatie van n_points naar [0,1]."
-            )
-
-    # Export standaard outputs
+def run(cfg: ClusterConfig) -> None:
+    """CLI run: doet exports en kan plots maken."""
+    points_proj, clusters_wgs84 = run_return(cfg)
     export_results(points_proj, clusters_wgs84, cfg)
 
-    # Plot alles (optioneel)
     if cfg.make_plot:
-        plot_clusters(points_proj, cfg)
+        fig1 = plot_clusters(points_proj, cfg)
+        plt.show()
 
-    # Plot top-N clusters samen
-    if cfg.make_plot and not clusters_wgs84.empty:
-        plot_top_n_clusters(points_proj, clusters_wgs84, n=cfg.top_n_plot)
-
-    # Export top-K clusterpunten (hele rijen) + per cluster apart
-    if not clusters_wgs84.empty and cfg.top_k_export > 0:
-        export_top_k_cluster_points(points_proj, clusters_wgs84, k=cfg.top_k_export, out_dir=cfg.out_dir, prefix="top")
-
-    # Losse plots per cluster (top-N)
-    if cfg.make_plot and not clusters_wgs84.empty and cfg.per_cluster_plot_n > 0:
-        plot_each_cluster(points_proj, clusters_wgs84, n=cfg.per_cluster_plot_n, out_dir=cfg.out_dir)
-
-
+        fig2 = plot_top_n_clusters(points_proj, clusters_wgs84, n=5)
+        plt.show()
 
 
 if __name__ == "__main__":
     cfg = ClusterConfig(
         input_csv="combined.csv",
-
         algorithm="dbscan",
         eps_m=5000,
         min_samples=3,
         min_cluster_size=3,
-
         min_per_source={
-            # "Bouwwerk": 2,
             "Locatiespecifiek": 1,
-            "Energieproject":1
+            "Energieproject": 1
         },
-
-        required_points=[],
-        attach_required_max_dist_m=1000,
-
-        target_n_clusters=10,
-
         exclude_sources=["Bouwwerk", "Bovenregionaal"],
-
-        optimization_rules=[
-            # OptimizationRule(
-            #     source="Bouwwerk",
-            #     column="Max ruimte verbruik",
-            #     agg="sum",
-            #     direction="max",
-            #     weight=1.0,
-            # ),
-        ],
-
+        target_n_clusters=10,
+        optimization_rules=[],
         out_dir="outputs",
         make_plot=True,
-
-        # JOUW WENSEN:
-        top_n_plot=5,        # top 5 clusters samen plotten
-        top_k_export=5,      # export top 3 clusters met alle punten (volle rijen)
-        per_cluster_plot_n=5 # losse plot per cluster (top 5)
     )
 
     run(cfg)
