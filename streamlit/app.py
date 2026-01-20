@@ -2,7 +2,11 @@
 import os
 import streamlit as st
 import pandas as pd
-
+from toolbox_recommender import (
+    load_toolbox,
+    build_cluster_context,
+    recommend_for_cluster,
+)
 from clustering_pipeline import (
     ClusterConfig,
     OptimizationRule,
@@ -85,12 +89,12 @@ eps_m = st.sidebar.slider(
 
 min_samples = st.sidebar.slider(
     "Minimaal aantal gebouwen voor een cluster",
-    min_value=1, max_value=50, value=3, step=1
+    min_value=1, max_value=40, value=3, step=1
 )
 
 target_n_clusters = st.sidebar.slider(
     "Laat de top N clusters zien",
-    min_value=1, max_value=50, value=10, step=1
+    min_value=1, max_value=20, value=10, step=1
 )
 
 # Afgeleide waarden (jouw wens)
@@ -108,7 +112,7 @@ st.sidebar.header("Filters")
 exclude_sources = st.sidebar.multiselect(
     "Dit type locaties niet meenemen",
     options=SOURCE_OPTIONS,
-    default=["Bouwwerk", "Bovenregionaal"],
+    default=["Bovenregionaal"],
 )
 
 st.sidebar.caption("Minimaal aantal locaties per locatietype binnen een cluster.")
@@ -118,7 +122,7 @@ for s in SOURCE_OPTIONS:
         f"minimaal aantal: {s}",
         min_value=0,
         max_value=999,
-        value=0 if s in ["Bouwwerk", "Bovenregionaal"] else 1,
+        value=0 if s in ["Bovenregionaal"] else 1,
         step=1,
     )
     if int(val) > 0:
@@ -167,6 +171,15 @@ if use_opt_rule:
                 weight=float(opt_weight),
             )
         ]
+st.sidebar.header("Toolbox context (aanname)")
+grid_constraints_present = st.sidebar.checkbox("Netcongestie aanwezig", value=True)
+feed_in_capacity_available = st.sidebar.checkbox("Invoedingsruimte beschikbaar (teruglever)", value=True)
+flexible_load_present = st.sidebar.checkbox("Flexibele / stuurbare vraag aanwezig", value=False)
+physical_space_available = st.sidebar.checkbox("Fysieke ruimte beschikbaar (installaties)", value=True)
+
+sufficient_thermal_demand_present = st.sidebar.checkbox("Voldoende warmtevraag aanwezig", value=False)
+thermal_demand_is_low = st.sidebar.checkbox("Warmtevraag is laag", value=False)
+suitable_wind_location_present = st.sidebar.checkbox("Windlocatie geschikt", value=False)
 
 
 # -----------------------------
@@ -227,6 +240,16 @@ if run_btn:
         ]
         show_cols += [c for c in extra_cols if c in clusters_wgs84.columns]
 
+        energy_cols = [
+            "sum_opwek_kw",
+            "sum_bouwwerk_kw",
+            "mean_bouwwerk_demand_kw_used",
+            "future_demand_kw",
+            "vrije_ruimte_kw",
+        ]
+
+        show_cols += [c for c in energy_cols if c in clusters_wgs84.columns]
+
         # verwijder dubbele kolommen vóór display (Streamlit/PyArrow eis)
         clusters_wgs84 = clusters_wgs84.loc[:, ~clusters_wgs84.columns.duplicated()].copy()
 
@@ -273,6 +296,73 @@ if run_btn:
 
                 with st.expander(f"Cluster {cid} — {n} punten{src_summary}", expanded=False):
                     st.dataframe(df_c, use_container_width=True)
+    solutions = load_toolbox("toolbox_solutions.yaml")
+
+    st.subheader("Aanbevolen oplossingen per cluster (Toolbox)")
+
+
+
+    if not clusters_wgs84.empty:
+        # Loop per cluster
+        for _, crow in clusters_wgs84.sort_values("rank").iterrows():
+            cid = int(crow["cluster_id"])
+
+            ctx = build_cluster_context(
+                crow,
+                grid_constraints_present=grid_constraints_present,
+                feed_in_capacity_available=feed_in_capacity_available,
+                flexible_load_present=flexible_load_present,
+                physical_space_available=physical_space_available,
+                suitable_wind_location_present=suitable_wind_location_present,
+                sufficient_thermal_demand_present=sufficient_thermal_demand_present,
+                thermal_demand_is_low=thermal_demand_is_low,
+            )
+
+            recs = recommend_for_cluster(ctx, solutions, top_k=5)
+
+            with st.expander(f"Cluster {cid} — top {len(recs)} oplossingen", expanded=False):
+
+                st.markdown(
+                    f"""
+                    **🏢 Clusterkenmerken**
+                    - **Aantal gebouwen:** {ctx['number_of_buildings']}
+
+                    **⚡ Elektrische balans**
+                    - 🔋 **Opwek:** {crow['sum_opwek_kw']:.1f} kW
+                    - 🏠 **Bestaande bouwwerken:** {crow['sum_bouwwerk_kw']:.1f} kW
+                    - ➖ **Toekomstige vraag:** −{crow['future_demand_kw']:.1f} kW  
+                      _(gemiddeld {crow['mean_bouwwerk_demand_kw_used']:.1f} kW per locatie)_
+                    - ✅ **Vrije ruimte:** **{crow['vrije_ruimte_kw']:.1f} kW**
+                    """
+                )
+
+                st.divider()  # optioneel maar netjes
+
+                if not recs:
+                    st.info("Geen oplossingen toepasbaar op basis van huidige toggles/regels.")
+                else:
+                    for r in recs:
+                        sol = r.solution
+                        st.markdown(f"### {r.name}  \n**Score:** {r.score:.2f}  \n**Waarom:** {r.reason}")
+
+                        # compact kaartje met pro/cons
+                        pros = sol.get("pros", [])
+                        cons = sol.get("cons", [])
+                        if pros:
+                            st.markdown("**Voordelen:**")
+                            st.write(pros)
+                        if cons:
+                            st.markdown("**Nadelen:**")
+                            st.write(cons)
+
+                        # wanneer wel/niet (regels)
+                        if sol.get("preconditions"):
+                            st.markdown("**Voorwaarden:**")
+                            st.write(sol["preconditions"])
+                        if sol.get("exclusion_rules"):
+                            st.markdown("**Niet toepasbaar als:**")
+                            st.write([{"condition": x.get("condition"), "reason": x.get("reason")} for x in
+                                      sol["exclusion_rules"]])
 
     # ---- PLOTS (optioneel) ----
     if show_plots and not clusters_wgs84.empty:

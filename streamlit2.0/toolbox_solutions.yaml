@@ -1,0 +1,626 @@
+solutions:
+  - id: battery_storage
+    name: Batterij energieopslag (BESS)
+    category:
+      main: energieopslag
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Opslag van elektrische energie om pieken in afname te verminderen
+      of overschotten uit lokale opwek tijdelijk op te slaan.
+
+    preconditions:
+      - electricity_demand_present
+      - physical_space_available
+
+    exclusion_rules:
+      - condition: required_storage_kwh > 5000
+        reason: "BESS is volgens toolbox bedoeld tot circa 5000 kWh"
+
+    indicative_thresholds:
+      storage_capacity_kwh:
+        min: 60
+        max: 5000
+      power_kw:
+        commercial_min: 30
+
+    typical_use_cases:
+      - peak_shaving
+      - eigenverbruik_optimalisatie
+      - overbrugging_netcongestie
+
+    pros:
+      - Vermindert piekbelasting op het elektriciteitsnet
+      - Maakt elektrificatie mogelijk zonder directe netverzwaring
+      - Verhoogt eigen gebruik van lokaal opgewekte energie
+      - Bewezen en breed toepasbare technologie
+      - Kan tijdelijk extra vermogen beschikbaar maken
+
+    cons:
+      - Vereist fysieke ruimte (binnen of buiten)
+      - Initiële investeringskosten kunnen hoog zijn
+      - Veiligheids- en brandvoorschriften van toepassing
+      - Milieu-impact afhankelijk van batterijtechnologie
+      - Beperkte opslagduur (uren tot dagen)
+
+    notes:
+      maturity: "bewezen technologie"
+      scalability: "geschikt voor gebouw- en clusterniveau"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [13, 14, 15]
+        quote: "Batterij energieopslagsysteem is geschikt voor opslag tot circa 5000 kWh"
+
+
+
+  - id: low_emission_generator
+    name: Emissie-arm aggregaat
+    category:
+      main: eigen_energieopwekking
+      congestion_type: afnamecongestie
+
+    description: >
+      Lokale (meestal tijdelijke) opwek om snel extra vermogen beschikbaar te maken
+      wanneer netuitbreiding niet (tijdig) mogelijk is of wanneer pieken moeten worden opgevangen.
+
+    preconditions:
+      - grid_constraints_present
+
+    exclusion_rules:
+      - condition: grid_constraints_present == false
+        reason: "Aggregaat is vooral relevant wanneer netcapaciteit onvoldoende of niet tijdig beschikbaar is"
+      - condition: required_power_kw > 120
+        reason: "Buiten indicatieve range voor 1 emissie-arm aggregaat; alleen mogelijk met meerdere units/alternatieve oplossing"
+
+    indicative_thresholds:
+      power_kw:
+        typical_min: 20
+        typical_max_single_unit: 120
+        note: "Toolbox noemt emissie-arm aggregaat 20–120 kW (indicatief). Voor hogere vermogens kan opschalen met meerdere units nodig zijn."
+
+    typical_use_cases:
+      - tijdelijke vermogensuitbreiding bij afnamecongestie
+      - overbrugging tijdens wachttijd netverzwaring
+      - piekondersteuning (peak support) als tijdelijke maatregel
+
+    pros:
+      - Snel inzetbaar bij urgente vermogensbehoefte
+      - Kan projecten tijdelijk mogelijk maken ondanks netcongestie
+      - Kan pieken opvangen wanneer netaansluiting onvoldoende is
+
+    cons:
+      - Brandstoflogistiek nodig en operationele kosten
+      - Niet per definitie emissieloos; omgeving/vergunningen kunnen beperkend zijn
+      - Opschalen naar hogere vermogens kan complexer en duurder zijn
+
+    checklist:
+      - "Is emissie-/stikstofruimte een harde eis op deze locatie?"
+      - "Is brandstof (bijv. HVO) logistiek haalbaar en toegestaan?"
+      - "Is opschalen met meerdere aggregaten technisch/ruimtelijk haalbaar als vermogen > 120 kW?"
+      - "Is er een exit-strategie (tijdelijk gebruik totdat netcapaciteit beschikbaar is)?"
+
+    notes:
+      maturity: "bewezen techniek; emissieloze varianten (waterstof) nog beperkt beschikbaar"
+      scalability: "geschikt voor locatie-/projectniveau; vaak tijdelijk of als deeloplossing"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [20]
+        quote: "Emissie-arm aggregaat 20–120kW; voorkeur voor CO2-vrije oplossing en minimaal HVO-brandstof."
+
+
+
+
+  - id: energy_hub
+    name: Energiehub
+    category:
+      main: energie_netwerken
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Een lokale samenwerking tussen meerdere gebouwen en/of gebruikers waarin
+      energieopwekking, -opslag, -conversie en -verbruik onderling worden afgestemd,
+      met als doel de belasting van het openbare elektriciteitsnet te verminderen.
+
+    preconditions:
+      - multiple_buildings_present
+      - grid_constraints_present
+      - spatial_proximity_between_buildings
+
+    exclusion_rules:
+      - condition: number_of_buildings < 5
+        reason: "Energiehub vereist meerdere deelnemers om technisch en economisch haalbaar te zijn"
+      - condition: spatial_spread_m > 1000
+        reason: "Gebouwen liggen te ver uit elkaar voor een lokale energiehub"
+
+    indicative_thresholds:
+      number_of_buildings:
+        min: 5
+        note: "Toolbox en praktijkervaring: hubs zijn vooral zinvol bij meerdere (≥5–10) gebouwen"
+      spatial_spread_m:
+        max: 1000
+        note: "Indicatief; korte afstanden zijn nodig voor lokale infrastructuur"
+      load_profile:
+        note: "Bij voorkeur complementaire of gespreide profielen (niet alle pieken tegelijk)"
+
+    typical_use_cases:
+      - gebiedsgerichte aanpak bij structurele netcongestie
+      - delen van lokaal opgewekte energie tussen gebouwen
+      - combineren van opwek, opslag en flexibiliteit binnen een cluster
+      - verminderen noodzaak tot netverzwaring
+
+    pros:
+      - Structurele oplossing voor netcongestie op gebiedsniveau
+      - Efficiënter gebruik van lokaal opgewekte energie
+      - Minder afhankelijkheid van netverzwaring door netbeheerder
+      - Geschikt voor combinatie van meerdere maatregelen (opwek, opslag, sturing)
+      - Kan leveringszekerheid en flexibiliteit vergroten
+
+    cons:
+      - Hoge initiële investeringskosten
+      - Complexe organisatie en coördinatie tussen meerdere partijen
+      - Juridische en contractuele afspraken noodzakelijk
+      - Lange ontwikkeltijd voordat realisatie mogelijk is
+      - Niet geschikt voor kleine clusters of solitaire gebouwen
+
+    checklist:
+      - "Zijn er voldoende gebouwen/deelnemers om schaalvoordelen te behalen?"
+      - "Liggen de gebouwen dicht genoeg bij elkaar voor lokale infrastructuur?"
+      - "Zijn de loadprofielen voldoende complementair?"
+      - "Is er bereidheid tot samenwerking en gezamenlijke governance?"
+      - "Zijn contractvormen (bijv. groeps-ATO) nodig of mogelijk?"
+
+    notes:
+      maturity: "in ontwikkeling; toenemend aantal praktijkvoorbeelden"
+      scalability: "geschikt voor middelgrote tot grote clusters/gebieden"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [10, 23, 24]
+        quote: "Een energiehub is een lokale samenwerking tussen meerdere partijen op het gebied van energie."
+
+
+
+
+
+  - id: contractual_flexibility
+    name: Contracten (flexibele contractvormen)
+    category:
+      main: contractuele_oplossingen
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Aanpassing of optimalisatie van contractuele afspraken met de netbeheerder
+      of energieleverancier om binnen bestaande netcapaciteit toch meer flexibiliteit
+      te creëren, bijvoorbeeld door tijdsgebonden vermogensafspraken of flexibele
+      aansluitcontracten.
+
+    preconditions:
+      - grid_constraints_present
+
+    exclusion_rules:
+      - condition: grid_constraints_present == false
+        reason: "Contractuele oplossingen zijn alleen relevant bij netcongestie"
+
+    indicative_thresholds:
+      load_profile:
+        note: "Met name geschikt bij voorspelbare of stuurbare pieken in het verbruiksprofiel"
+      number_of_buildings:
+        min: 1
+        note: "Toepasbaar voor zowel individuele gebouwen als clusters"
+
+    typical_use_cases:
+      - benutten van bestaande aansluiting zonder fysieke netverzwaring
+      - tijdelijke overbrugging bij netcongestie
+      - clusters met stuurbaar of flexibel energieverbruik
+      - situaties waarin investeringen in hardware (nog) niet wenselijk zijn
+
+    pros:
+      - Geen fysieke ingrepen of installaties nodig
+      - Relatief snel implementeerbaar
+      - Lage investeringskosten vergeleken met technische oplossingen
+      - Geschikt als eerste of tijdelijke maatregel bij netcongestie
+
+    cons:
+      - Beperkte flexibiliteit ten opzichte van technische oplossingen
+      - Afhankelijk van bereidheid en mogelijkheden van netbeheerder
+      - Kan leiden tot beperkingen in gebruik op bepaalde momenten
+      - Structurele groei kan alsnog fysieke maatregelen vereisen
+
+    checklist:
+      - "Is het verbruiksprofiel voldoende voorspelbaar of stuurbaar?"
+      - "Zijn pieken te verplaatsen in tijd zonder grote operationele impact?"
+      - "Is de organisatie bereid flexibiliteit te accepteren in ruil voor capaciteit?"
+      - "Zijn passende contractvormen beschikbaar bij de netbeheerder?"
+
+    notes:
+      maturity: "bewezen en veel toegepast"
+      scalability: "geschikt voor alle schaalniveaus; individueel en in clusters"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [6, 7]
+        quote: "Contractuele afspraken kunnen worden ingezet om binnen bestaande netcapaciteit flexibiliteit te creëren."
+
+
+
+
+  - id: small_consumer_connection
+    name: Kleinverbruikersaansluiting
+    category:
+      main: netaansluiting
+      congestion_type: afnamecongestie
+
+    description: >
+      Toepassen van een kleinverbruikersaansluiting per gebouw wanneer de vermogensvraag
+      per gebouw beperkt is. Dit kan een (tijdelijke) route zijn om ontwikkeling of gebruik
+      mogelijk te maken wanneer een grootverbruikersaansluiting door netcongestie niet (tijdig)
+      beschikbaar is.
+
+    preconditions:
+      - grid_constraints_present
+
+    exclusion_rules:
+      - condition: required_power_per_building_kw > 55
+        reason: "Vermogen per gebouw is hoger dan passend bij een kleinverbruikersaansluiting (indicatief ~3×80A ≈ 55 kW)"
+      - condition: required_power_per_building_kw <= 0
+        reason: "Onbekende of ongeldige vermogensvraag per gebouw; bereken required_power_per_building_kw eerst"
+
+    indicative_thresholds:
+      required_power_per_building_kw:
+        max: 55
+        note: "Indicatief: kleinverbruik tot circa 3×80A (orde-grootte ~55 kW; afhankelijk van spanning en aansluitvariant)"
+      number_of_buildings:
+        note: "Relevanter bij clusters waar meerdere gebouwen elk afzonderlijk binnen kleinverbruik vallen"
+
+    typical_use_cases:
+      - clusters met meerdere gebouwen met lage individuele vermogensvraag
+      - gefaseerde ontwikkeling (start met lage vraag per gebouw)
+      - tijdelijke overbrugging bij netcongestie op grootverbruik
+
+    pros:
+      - Vaak sneller realiseerbaar dan een grootverbruikersaansluiting
+      - Minder complexe technische en contractuele inrichting
+      - Geschikt voor clusters met lage vermogensvraag per gebouw
+      - Kan ontwikkeling mogelijk maken ondanks congestie op grootverbruik
+
+    cons:
+      - Beperkt maximaal vermogen per gebouw
+      - Opschalen naar hogere vermogens vereist later alsnog netaanpassing
+      - Niet geschikt bij hoge piekbelasting of snelle elektrificatie
+      - Kan toekomstige flexibiliteit beperken
+
+    checklist:
+      - "Is required_power_per_building_kw gebaseerd op piekvermogen (kW) en niet op energie (kWh)?"
+      - "Is groei/elektrificatie in de komende jaren voorzien (laadinfra, warmtepompen, proceslast)?"
+      - "Is het acceptabel dat later alsnog een grootverbruikersaansluiting of verzwaring nodig is?"
+      - "Is fasering (stapsgewijze opschaling) operationeel haalbaar voor gebruikers?"
+
+    notes:
+      maturity: "bewezen en gangbare aansluitvorm"
+      scalability: "geschikt per gebouw; cluster-toepassing alleen als elk gebouw afzonderlijk binnen kleinverbruik valt"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [5, 6]
+        quote: "Bij beperkte vermogensvraag per aansluiting kan een kleinverbruikersaansluiting volstaan."
+
+
+  - id: short_term_thermal_buffer
+    name: Korte termijn warmte-koude buffer
+    category:
+      main: energieopslag
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Een thermisch buffervat ("thermische batterij") om warmte of koude tijdelijk op te slaan
+      (enkele uren tot circa een dag). Hierdoor kan een warmte-/koudeopwekker (bijv. warmtepomp)
+      flexibeler worden ingezet: produceren wanneer elektriciteit beschikbaar/goedkoop is en
+      later gebruiken, waardoor pieken in elektriciteitsafname kunnen worden verlaagd.
+
+    preconditions:
+      - grid_constraints_present
+
+    exclusion_rules:
+      - condition: grid_constraints_present == false
+        reason: "Thermische buffering wordt vooral ingezet om pieken te beperken bij netcongestie"
+
+    indicative_thresholds:
+      storage_duration:
+        max: "enkele uren tot circa 1 dag"
+        note: "Kortetermijnbuffer is bedoeld als piekbuffer op uur/dagdeel-basis"
+      temperature:
+        note: "Warmte tot ca. 90C of koude in een geisoleerd voorraadvat (afhankelijk van systeem)"
+
+    typical_use_cases:
+      - piekbuffer voor elektrische warmtepompen (peak shaving van afname)
+      - warmte/koude produceren op gunstige momenten en later gebruiken
+      - benutten van overschot aan (duurzame) elektriciteit via Power-to-Heat
+      - benutten van restwarmte of -koude
+
+    pros:
+      - Lagere en flexibelere belasting van het elektriciteitsnet
+      - Overcapaciteit van (duurzame) elektriciteit gaat minder snel verloren (beter benutten)
+      - Warmtepompen kunnen efficienter en constanter draaien (langere levensduur)
+      - Kan piekketels overbodig maken of verkleinen (situatie-afhankelijk)
+      - Milieubelasting beperkt en onderhoud minimaal
+
+    cons:
+      - Impact op gebouw/omgeving door ruimtebeslag en gewicht van buffervat
+      - Vereist geschikte warmte-/koude-infrastructuur en inpassing in het systeem
+      - Effect is vooral kortetermijn (uren tot ongeveer 1 dag), geen seizoensopslag
+      - Kosten zijn situatie- en ontwerpafhankelijk
+
+    checklist:
+      - "Is er voldoende thermische vraag (warmte en/of koude) in het cluster/gebouw?"
+      - "Is er een elektrische warmte-/koudeopwekker aanwezig of gepland (bijv. warmtepomp)?"
+      - "Is er ruimte en draagkracht (gewicht) voor buffervat(ten) binnen of buiten?"
+      - "Kunnen we warmte/koude produceren op momenten met lagere netdruk (load shifting)?"
+      - "Is dit een uur/dagdeel probleem (kortetermijn) of is seizoensopslag nodig?"
+
+    notes:
+      maturity: "bewezen techniek"
+      scalability: "geschikt op gebouw- of clusterniveau waar thermische systemen aanwezig zijn"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [29]
+        quote: "Met een buffervat kan energie voor enkele uren tot circa een dag worden opgeslagen; toepasbaar als piekbuffer op uur of dagdeel basis."
+
+
+
+
+  - id: seasonal_thermal_storage
+    name: Seizoensopslag thermische energie
+    category:
+      main: energieopslag
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Opslag van warmte of koude over langere tijd (weken tot seizoenen), zodat
+      thermische energie die in de zomer beschikbaar is (bijv. restwarmte of zonthermie)
+      kan worden benut in de winter, en omgekeerd. Hiermee kan de elektrische
+      belasting van warmte-/koudeopwek structureel worden verlaagd.
+
+    preconditions:
+      - grid_constraints_present
+      - sufficient_thermal_demand_present
+      - spatial_opportunity_available
+
+    exclusion_rules:
+      - condition: number_of_buildings < 5
+        reason: "Seizoensopslag is doorgaans alleen rendabel op gebieds- of clusterniveau met voldoende schaal"
+      - condition: spatial_spread_m > 1500
+        reason: "Gebouwen liggen te ver uit elkaar voor collectieve thermische infrastructuur"
+      - condition: thermal_demand_is_low == true
+        reason: "Onvoldoende thermische vraag om seizoensopslag effectief te benutten"
+
+    indicative_thresholds:
+      storage_duration:
+        min: "weken"
+        max: "seizoenen"
+        note: "Seizoensopslag is bedoeld voor lange termijn (niet voor uur/dagdeel-balancering)"
+      scale:
+        note: "Toepasbaar bij grotere warmtevraag en voldoende opslagvolume (bijv. WKO, BTES, ATES)"
+      load_profile:
+        note: "Met name geschikt bij structurele en voorspelbare thermische vraag"
+
+    typical_use_cases:
+      - structurele verlaging van elektrische pieken bij warmtevraag
+      - benutten van zomerse warmteoverschotten voor wintergebruik
+      - combinatie met warmtenetten of collectieve warmtepompsystemen
+      - gebiedsontwikkeling met langetermijnvisie op energie-infrastructuur
+
+    pros:
+      - Structurele vermindering van elektriciteitsafname voor warmte/koude
+      - Efficiënt gebruik van duurzame en restwarmte over seizoenen
+      - Vermindert afhankelijkheid van piekvermogen en netverzwaring
+      - Lange levensduur van opslagvoorzieningen
+
+    cons:
+      - Hoge initiële investeringskosten
+      - Lange ontwikkel- en realisatietijd
+      - Vereist ruimte en geschikte bodem/ondergrond (bij ondergrondse opslag)
+      - Complex ontwerp en beheer; niet geschikt als snelle maatregel
+
+    checklist:
+      - "Is er voldoende en structurele thermische vraag in het cluster?"
+      - "Is er ruimte/bodem geschikt voor seizoensopslag (bijv. WKO/BTES/ATES)?"
+      - "Is dit een structureel probleem (jaren) in plaats van een tijdelijk knelpunt?"
+      - "Is er een gebieds- of langetermijnvisie waarin deze investering past?"
+      - "Is collectieve organisatie en governance haalbaar?"
+
+    notes:
+      maturity: "bewezen techniek, maar context- en locatieafhankelijk"
+      scalability: "geschikt voor middelgrote tot grote clusters en gebiedsniveau"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [30]
+        quote: "Seizoensopslag maakt het mogelijk om warmte of koude over langere perioden op te slaan en structureel netbelasting te verminderen."
+
+
+
+
+
+  - id: peak_shaving_load_shifting
+    name: Peak shaving en load shifting
+    category:
+      main: vraagsturing
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Actief sturen van elektriciteitsvraag door pieken te verlagen (peak shaving)
+      en verbruik te verplaatsen naar momenten met lagere netbelasting (load shifting).
+      Dit kan via energiemanagement, processturing of slimme aansturing van installaties.
+
+    preconditions:
+      - grid_constraints_present
+      - flexible_load_present
+
+    exclusion_rules:
+      - condition: flexible_load_present == false
+        reason: "Zonder stuurbare of verplaatsbare lasten is peak shaving/load shifting niet toepasbaar"
+
+    indicative_thresholds:
+      load_profile:
+        note: "Met name geschikt bij duidelijke pieken en voldoende flexibiliteit in het verbruik"
+      time_flexibility:
+        note: "Flexibiliteit op uur- of dagdeelbasis vereist"
+
+    typical_use_cases:
+      - verminderen van piekbelasting bij netcongestie
+      - benutten van daluren of momenten met lage netdruk
+      - optimalisatie van bestaande aansluiting zonder fysieke netverzwaring
+      - combinatie met contractuele flexibiliteit of energieopslag
+
+    pros:
+      - Geen of beperkte fysieke investeringen nodig
+      - Relatief snel implementeerbaar
+      - Vermindert piekbelasting op het elektriciteitsnet
+      - Goed te combineren met andere oplossingen (BESS, contracten, thermische buffers)
+
+    cons:
+      - Vereist flexibiliteit in bedrijfsprocessen of gebouwgebruik
+      - Kan operationele beperkingen opleveren
+      - Effectiviteit afhankelijk van mate van stuurbaarheid
+      - Structurele groei kan alsnog fysieke maatregelen vereisen
+
+    checklist:
+      - "Zijn er stuurbare of verplaatsbare elektrische lasten aanwezig?"
+      - "Kunnen processen of installaties tijdelijk worden uitgesteld of vervroegd?"
+      - "Is inzicht in het load profile (bijv. kwartierwaarden) beschikbaar?"
+      - "Is energiemanagement of automatisering aanwezig of realiseerbaar?"
+      - "Is comfort of procescontinuïteit een beperkende factor?"
+
+    notes:
+      maturity: "bewezen en veel toegepast"
+      scalability: "geschikt voor individuele gebouwen en clusters met flexibiliteit in vraag"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [9, 16]
+        quote: "Door pieken in het verbruik te verminderen en vraag te verschuiven kan netbelasting worden verlaagd zonder fysieke netverzwaring."
+
+
+
+
+  - id: urban_battery
+    name: Stadsbatterij
+    category:
+      main: energieopslag
+      congestion_type: afname_en_teruglevering
+
+    description: >
+      Een grootschalige, centraal geplaatste batterij die op wijk- of gebiedsniveau
+      elektriciteit opslaat om pieken in afname en teruglevering te dempen. De stadsbatterij
+      ondersteunt meerdere gebouwen tegelijk en kan lokaal netcongestie verminderen.
+
+    preconditions:
+      - grid_constraints_present
+      - multiple_buildings_present
+
+    exclusion_rules:
+      - condition: number_of_buildings < 5
+        reason: "Een stadsbatterij is alleen zinvol bij voldoende schaal (meerdere gebouwen)"
+      - condition: spatial_spread_m > 1500
+        reason: "Gebouwen liggen te ver uit elkaar om collectief van één stadsbatterij te profiteren"
+
+    indicative_thresholds:
+      storage_capacity_kwh:
+        note: "Grootschalige opslag; typisch groter dan gebouwgebonden batterijen"
+        min: 500
+      spatial_spread_m:
+        max: 1500
+        note: "Indicatief; korte afstanden zijn nodig om lokale netimpact te realiseren"
+      load_profile:
+        note: "Met name geschikt bij duidelijke en gezamenlijke pieken in afname of teruglevering"
+
+    typical_use_cases:
+      - wijk- of gebiedsgerichte aanpak bij structurele netcongestie
+      - gezamenlijke buffering van lokale opwek (bijv. PV) en verbruik
+      - ondersteuning van elektrificatie in bestaande wijken
+      - combinatie met energiemanagement of energiehub-concepten
+
+    pros:
+      - Collectieve oplossing voor meerdere gebouwen tegelijk
+      - Vermindert piekbelasting en terugleverpieken op lokaal net
+      - Efficiënter dan individuele batterijen bij voldoende schaal
+      - Kan lokale opwek beter benutten
+
+    cons:
+      - Hoge investeringskosten
+      - Complexe governance en eigendomsstructuur
+      - Ruimte nodig op centrale locatie
+      - Afstemming met netbeheerder noodzakelijk
+      - Niet geschikt voor kleine of verspreide clusters
+
+    checklist:
+      - "Is er voldoende schaal (aantal gebouwen en gezamenlijk vermogen)?"
+      - "Zijn de gebouwen ruimtelijk voldoende geconcentreerd?"
+      - "Is er een geschikte centrale locatie beschikbaar voor de batterij?"
+      - "Is gezamenlijke organisatie/eigenaarschap haalbaar?"
+      - "Is afstemming met netbeheerder en marktpartijen mogelijk?"
+
+    notes:
+      maturity: "in ontwikkeling; toenemende pilots en praktijkvoorbeelden"
+      scalability: "geschikt voor wijk- en gebiedsniveau bij voldoende schaal"
+
+    sources:
+      - document: "Toolbox Netcongestie RVB"
+        pages: [25, 26]
+        quote: "Een stadsbatterij is een grootschalige batterij op wijk- of gebiedsniveau die meerdere gebruikers bedient."
+
+
+
+  - id: wind_energy
+    name: Windenergie
+    category:
+      main: duurzame_opwek
+      congestion_type: teruglevercongestie
+
+    description: >
+      Opwekking van elektriciteit met windturbines op of nabij het cluster.
+      Windenergie kan lokaal duurzame elektriciteit leveren, maar kan ook
+      leiden tot extra teruglevering op een reeds overbelast net.
+
+    preconditions:
+      - suitable_wind_location_present
+      - spatial_opportunity_available
+
+    exclusion_rules:
+      - condition: grid_constraints_present == true and feed_in_capacity_available == false
+        reason: "Bij teruglevercongestie zonder beschikbare invoedingsruimte is windenergie niet direct toepasbaar"
+      - condition: spatial_spread_m < 0
+        reason: "Ongeldige ruimtelijke configuratie (placeholder voor validatie)"
+
+    indicative_thresholds:
+      scale:
+        note: "Windenergie vereist relatief veel ruimte en afstand tot bebouwing"
+      load_profile:
+        note: "Productie is variabel en niet stuurbaar; afstemming met vraag of opslag is wenselijk"
+      number_of_buildings:
+        note: "Relevanter op cluster- of gebiedsniveau dan voor individuele gebouwen"
+
+    typical_use_cases:
+      - grootschalige duurzame elektriciteitsopwek
+      - gebiedsontwikkelingen met ruimte voor windturbines
+      - combinatie met opslag of vraagsturing om netimpact te beperken
+      - lange-termijn verduurzamingsstrategie
+
+    pros:
+      - Grote bijdrage aan duurzame elektriciteitsproductie
+      - Lage operationele kosten na realisatie
+      - Lange levensduur van installaties
+      - Geen directe CO₂-uitstoot tijdens exploitatie
+
+    cons:
+      - Variabele en niet-stuurbare productie
+      - Kan teruglevercongestie verergeren zonder aanvullende maatregelen
+      - Ruimtelijke en maatschappelijke impact (zicht, geluid)
+      - Lange vergunningstrajecten en planvorming
+
+    checklist:
+      - "Is er voldoende ruimte en geschikte windcondities?"
+      - "Is teruglevering op het net mogelijk of zijn aanvullende maatregelen nodig?"

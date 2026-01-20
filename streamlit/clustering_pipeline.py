@@ -60,6 +60,9 @@ class ClusterConfig:
     input_csv: str = "combined.csv"
     geometry_col: str = "geometry"
     source_col: str = "source"
+    # Proxy voor toekomstige locaties (Bovenregionaal/Locatiespecifiek)
+    future_consumer_sources: Tuple[str, ...] = ("Bovenregionaal", "Locatiespecifiek")
+    global_mean_bouwwerk_verbruik_kw: Optional[float] = None
     assumed_input_crs_epsg: int = 28992  # RD New
 
     # Clustering
@@ -71,6 +74,8 @@ class ClusterConfig:
     # Constraints
     min_per_source: Dict[str, int] = field(default_factory=dict)
     exclude_sources: List[str] = field(default_factory=list)
+    future_consumer_sources: Tuple[str, ...] = ("Bovenregionaal", "Locatiespecifiek")
+    global_mean_bouwwerk_demand_kw: Optional[float] = None
 
     required_points: List[RequiredPoint] = field(default_factory=list)
     attach_required_max_dist_m: float = 2000.0
@@ -426,50 +431,58 @@ def _free_electric_space_kw(
     grp: gpd.GeoDataFrame,
     source_col: str,
     pv_capacity_factor: float = 0.12,
-) -> Tuple[float, float, float]:
+    future_consumer_sources: Tuple[str, ...] = ("Bovenregionaal", "Locatiespecifiek"),
+    global_mean_bouwwerk_demand_kw: Optional[float] = None,
+) -> Tuple[float, float, float, float, float]:
     """
-    Berekent vrije elektriciteitsruimte in kW.
+    Vrije elektriciteitsruimte in kW.
 
-    Aannames:
-    - Energieproject 'opwek' is in MWp (geïnstalleerd piekvermogen)
-    - Effectieve opwek (kW) = MWp * 1000 * capaciteitsfactor
-    - Bouwwerk 'Max ruimte verbruik' is in kW (mag negatief zijn)
+    - Energieproject 'opwek' is MWp => effectieve opwek (kW) = MWp * 1000 * CF
+    - Bouwwerk 'Max ruimte verbruik' is kW (kan negatief zijn)
+    - Bovenregionaal/Locatiespecifiek zijn toekomstige locaties met extra vraag:
+        toekomstige_vraag_kw = n_future * global_mean_bouwwerk_demand_kw
+      Deze vraag gaat VAN de vrije ruimte af.
 
-    Retourneert:
-    - sum_effective_opwek_kw
-    - sum_max_ruimte_verbruik_kw
-    - vrije_ruimte_kw = opwek + max_ruimte_verbruik
+    Returns:
+      sum_effective_opwek_kw,
+      sum_bouwwerk_kw,
+      mean_bouwwerk_demand_kw_used,
+      future_demand_kw,
+      vrije_ruimte_kw
     """
-
-    sum_effective_opwek_kw = 0.0
-    sum_max_ruimte_verbruik_kw = 0.0
-
     if source_col not in grp.columns:
-        return 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0
 
-    # --------------------
-    # Energieproject: opwek (MWp -> kW)
-    # --------------------
+    # --- opwek (MWp -> kW) ---
+    sum_effective_opwek_kw = 0.0
     ep = grp[grp[source_col] == "Energieproject"]
     if not ep.empty and "opwek" in ep.columns:
         opwek_mwp = pd.to_numeric(ep["opwek"], errors="coerce").fillna(0.0)
         sum_effective_opwek_kw = float((opwek_mwp * 1000.0 * pv_capacity_factor).sum())
 
-    # --------------------
-    # Bouwwerk: Max ruimte verbruik (kW)
-    # --------------------
+    # --- bouwwerk som (ruimte/verbruik, kW) ---
+    sum_bouwwerk_kw = 0.0
     bw = grp[grp[source_col] == "Bouwwerk"]
     if not bw.empty and "Max ruimte verbruik" in bw.columns:
-        sum_max_ruimte_verbruik_kw = float(
-            pd.to_numeric(bw["Max ruimte verbruik"], errors="coerce").fillna(0.0).sum()
-        )
+        bw_vals = pd.to_numeric(bw["Max ruimte verbruik"], errors="coerce").fillna(0.0)
+        sum_bouwwerk_kw = float(bw_vals.sum())
 
-    vrije_ruimte_kw = sum_effective_opwek_kw + sum_max_ruimte_verbruik_kw
+    # --- toekomstige vraag (gaat eraf) ---
+    mean_demand_kw = float(global_mean_bouwwerk_demand_kw) if global_mean_bouwwerk_demand_kw is not None else 0.0
+    n_future = int(grp[grp[source_col].isin(future_consumer_sources)].shape[0])
+    future_demand_kw = float(n_future * mean_demand_kw)
+
+    vrije_ruimte_kw = sum_effective_opwek_kw + sum_bouwwerk_kw - future_demand_kw
+
     return (
         float(sum_effective_opwek_kw),
-        float(sum_max_ruimte_verbruik_kw),
+        float(sum_bouwwerk_kw),
+        float(mean_demand_kw),
+        float(future_demand_kw),
         float(vrije_ruimte_kw),
     )
+
+
 
 
 
@@ -495,7 +508,12 @@ def summarize_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> Tup
 
 
         # (2) Vrije elektriciteitsruimte (kW)
-        sum_opwek_kw, sum_maxruimte_verbruik_kw, vrije_ruimte_kw = _free_electric_space_kw(grp, cfg.source_col)
+        sum_opwek_kw, sum_bouwwerk_kw, mean_demand_used_kw, future_demand_kw, vrije_ruimte_kw = _free_electric_space_kw(
+            grp,
+            cfg.source_col,
+            future_consumer_sources=cfg.future_consumer_sources,
+            global_mean_bouwwerk_demand_kw=cfg.global_mean_bouwwerk_demand_kw,
+        )
 
         src_counts = grp[cfg.source_col].value_counts(dropna=False).to_dict() if cfg.source_col in grp.columns else {}
 
@@ -526,8 +544,12 @@ def summarize_clusters(points_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> Tup
 
                 # nieuwe energie-attributen
                 "sum_opwek_kw": float(sum_opwek_kw),
-                "sum_max_ruimte_verbruik_kw": float(sum_maxruimte_verbruik_kw),
-                "vrije_ruimte_kw": float(vrije_ruimte_kw),
+"sum_bouwwerk_kw": float(sum_bouwwerk_kw),
+"mean_bouwwerk_demand_kw_used": float(mean_demand_used_kw),
+"future_demand_kw": float(future_demand_kw),
+"vrije_ruimte_kw": float(vrije_ruimte_kw),
+
+
 
                 "src_counts": src_counts,
             }
@@ -678,6 +700,36 @@ def run_return(cfg: ClusterConfig) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """Voor Streamlit: return points + clusters (geen files, geen plt.show)."""
     gdf = load_combined_csv(cfg)
     gdf = ensure_single_point_per_feature(gdf)
+
+    # --- Globale gemiddelde bouwwerk-vraag (kW) voor toekomstige locaties ---
+    # We gebruiken alleen de vraagcomponent: demand = max(0, -Max ruimte verbruik)
+    if cfg.source_col in gdf.columns and "Max ruimte verbruik" in gdf.columns:
+        bw_all = gdf[gdf[cfg.source_col] == "Bouwwerk"]
+        if not bw_all.empty:
+            vals = pd.to_numeric(bw_all["Max ruimte verbruik"], errors="coerce").dropna()
+            if not vals.empty:
+                demand_vals = (-vals).clip(lower=0)  # alleen vraag in kW
+                cfg.global_mean_bouwwerk_demand_kw = float(demand_vals.mean())
+            else:
+                cfg.global_mean_bouwwerk_demand_kw = 0.0
+        else:
+            cfg.global_mean_bouwwerk_demand_kw = 0.0
+    else:
+        cfg.global_mean_bouwwerk_demand_kw = 0.0
+
+    # --- Globaal gemiddelde bouwwerk verbruik (voor toekomstige locaties) ---
+    if cfg.source_col in gdf.columns and "Max ruimte verbruik" in gdf.columns:
+        bw_all = gdf[gdf[cfg.source_col] == "Bouwwerk"]
+        if not bw_all.empty:
+            vals = pd.to_numeric(bw_all["Max ruimte verbruik"], errors="coerce").dropna()
+            if not vals.empty:
+                cfg.global_mean_bouwwerk_verbruik_kw = float(vals.mean())
+            else:
+                cfg.global_mean_bouwwerk_verbruik_kw = 0.0
+        else:
+            cfg.global_mean_bouwwerk_verbruik_kw = 0.0
+    else:
+        cfg.global_mean_bouwwerk_verbruik_kw = 0.0
 
     if cfg.exclude_sources and cfg.source_col in gdf.columns:
         gdf = gdf[~gdf[cfg.source_col].isin(cfg.exclude_sources)].copy()
