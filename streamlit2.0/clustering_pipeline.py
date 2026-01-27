@@ -253,6 +253,124 @@ def enforce_required_points(gdf_proj: gpd.GeoDataFrame, cfg: ClusterConfig) -> g
 
     return gdf
 
+def enforce_unique_locatienaam_within_cluster(
+    gdf_proj: gpd.GeoDataFrame,
+    cfg: ClusterConfig,
+    *,
+    source_value: str = "Locatiespecifiek",
+    name_col: str = "Naam_locatie",
+    max_reassign_dist_m: Optional[float] = None,
+) -> gpd.GeoDataFrame:
+    """Zorgt dat binnen één cluster niet twee *Locatiespecifiek*-punten met dezelfde
+    ``Naam_locatie`` voorkomen.
+
+    Gedrag:
+    - Alleen van toepassing op punten met ``source == source_value``.
+    - Per (cluster_id, Naam_locatie) houden we precies één punt in het cluster.
+    - Overige duplicaten proberen we te verplaatsen naar het dichtstbijzijnde *andere*
+      cluster dat diezelfde Naam_locatie nog niet heeft.
+    - Als geen geschikt cluster binnen ``max_reassign_dist_m`` (default: cfg.eps_m)
+      wordt gevonden, krijgt het punt cluster_id = -1 (noise).
+
+    Required points (cfg.required_points) worden nooit verplaatst.
+    """
+    gdf = gdf_proj.copy()
+
+    if "cluster_id" not in gdf.columns:
+        return gdf
+    if cfg.source_col not in gdf.columns:
+        return gdf
+    if name_col not in gdf.columns:
+        return gdf
+
+    if max_reassign_dist_m is None:
+        max_reassign_dist_m = float(cfg.eps_m)
+
+    # Required indices (mogen nooit verplaatst worden)
+    required_idx: set[int] = set()
+    if cfg.required_points:
+        for rp in cfg.required_points:
+            try:
+                idx = _find_required_index(gdf, rp)
+            except Exception:
+                idx = None
+            if idx is not None:
+                required_idx.add(int(idx))
+
+    locspec = gdf[(gdf[cfg.source_col] == source_value) & (gdf["cluster_id"] != -1)].copy()
+    if locspec.empty:
+        return gdf
+
+    clustered = gdf[gdf["cluster_id"] != -1]
+    centroids = clustered.groupby("cluster_id").geometry.apply(lambda s: s.union_all().centroid)
+
+    cluster_to_names: Dict[int, set[str]] = {}
+    for cid, grp in locspec.groupby("cluster_id"):
+        names = (
+            grp[name_col]
+            .astype(str)
+            .map(lambda x: x.strip())
+            .replace({"": np.nan})
+            .dropna()
+            .tolist()
+        )
+        cluster_to_names[int(cid)] = set(names)
+
+    def dist_to_centroid(point_geom, cid: int) -> float:
+        c = centroids.get(cid)
+        if c is None:
+            return float("inf")
+        return float(point_geom.distance(c))
+
+    for cid, grp in locspec.groupby("cluster_id"):
+        cid_int = int(cid)
+        grp2 = grp.copy()
+        grp2[name_col] = grp2[name_col].astype(str).map(lambda x: x.strip())
+        grp2 = grp2[grp2[name_col].notna() & (grp2[name_col] != "")]
+        if grp2.empty:
+            continue
+
+        for name, sub in grp2.groupby(name_col):
+            if len(sub) <= 1:
+                continue
+
+            keep_idx: Optional[int] = None
+            required_in_group = [int(i) for i in sub.index if int(i) in required_idx]
+            if required_in_group:
+                keep_idx = int(required_in_group[0])
+            else:
+                dists = sub.geometry.apply(lambda g: dist_to_centroid(g, cid_int))
+                keep_idx = int(dists.idxmin())
+
+            move_idxs = [int(i) for i in sub.index if int(i) != keep_idx and int(i) not in required_idx]
+            if not move_idxs:
+                continue
+
+            for idx in move_idxs:
+                geom = gdf.loc[idx, "geometry"]
+
+                candidates = [
+                    other_cid
+                    for other_cid in centroids.index.astype(int).tolist()
+                    if other_cid != cid_int and name not in cluster_to_names.get(int(other_cid), set())
+                ]
+
+                best_cid = None
+                best_dist = float("inf")
+                for other_cid in candidates:
+                    d = dist_to_centroid(geom, int(other_cid))
+                    if d < best_dist:
+                        best_dist = d
+                        best_cid = int(other_cid)
+
+                if best_cid is not None and best_dist <= float(max_reassign_dist_m):
+                    gdf.loc[idx, "cluster_id"] = int(best_cid)
+                    cluster_to_names.setdefault(int(best_cid), set()).add(str(name))
+                else:
+                    gdf.loc[idx, "cluster_id"] = -1
+
+    return gdf
+
 
 # =========================
 # Scoring + cluster summary
@@ -737,6 +855,11 @@ def run_return(cfg: ClusterConfig) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     gdf_proj, _ = to_projected_for_meters(gdf)
     gdf_proj = cluster_points(gdf_proj, cfg)
     gdf_proj = enforce_required_points(gdf_proj, cfg)
+
+    # Constraint: binnen één cluster niet twee Locatiespecifiek punten met dezelfde Naam_locatie
+    gdf_proj = enforce_unique_locatienaam_within_cluster(gdf_proj, cfg)
+
+    points_proj, clusters_wgs84 = summarize_clusters(gdf_proj, cfg)
 
     points_proj, clusters_wgs84 = summarize_clusters(gdf_proj, cfg)
     clusters_wgs84 = add_normalized_scores(clusters_wgs84)

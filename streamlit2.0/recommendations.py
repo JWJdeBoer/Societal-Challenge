@@ -21,6 +21,7 @@ def compute_recommendations(
     yaml_path: str,
     top_k: int,
     toggles: Dict[str, Any],
+    toggles_fingerprint: str,  # <-- nieuw: alleen voor cache-key
 ) -> Dict[int, List[Recommendation]]:
     solutions = get_toolbox_solutions(yaml_path)
 

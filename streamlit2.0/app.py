@@ -3,6 +3,8 @@ import os
 import io
 import hashlib
 from typing import List
+import json
+import hashlib
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +15,35 @@ from data_access import save_uploaded_csv, load_csv_preview, file_fingerprint
 from validators import validate_dataframe
 from ui_state import init_session_state, request_step, get_step, clear_results, apply_pending_navigation
 from ui_components import step_header, show_messages, dataframe_section, kpi_row, solution_card
+import base64
+from pathlib import Path
+#
+# def render_fixed_logo():
+#     logo_path = Path("afbeeldingen/logo-rijksvastgoedbedrijf-clipart-lg.png")
+#
+#     if not logo_path.exists():
+#         return
+#
+#     encoded = base64.b64encode(logo_path.read_bytes()).decode()
+#
+#     st.markdown(
+#         f"""
+#         <style>
+#         .rvb-logo {{
+#             position: fixed;
+#             top: 12px;
+#             right: 20px;
+#             z-index: 1000;
+#         }}
+#         </style>
+#
+#         <div class="rvb-logo">
+#             <img src="data:image/png;base64,{encoded}" width="140">
+#         </div>
+#         """,
+#         unsafe_allow_html=True,
+#     )
+
 
 
 # -----------------------------
@@ -49,7 +80,8 @@ init_session_state()
 # BELANGRIJK: altijd vóór de sidebar widgets
 apply_pending_navigation()
 
-st.title("Netcongestie Toolbox — clustering & oplossingsadvies")
+st.title("Verlichting netcongestie Tool — clustering & oplossingsadvies")
+
 st.caption(
     "Deze tool groepeert locaties in clusters op basis van afstand en energie-informatie, "
     "en geeft per cluster oplossingsopties uit de RVB-toolbox."
@@ -61,6 +93,12 @@ st.divider()
 # Sidebar: navigation + data source
 # -----------------------------
 with st.sidebar:
+    with st.sidebar:
+        st.image(
+            "afbeeldingen/Logo_rijksvastgoedbedrijf.svg",
+            width=300,
+        )
+        st.markdown("---")
     st.header("Navigatie")
 
     def _on_nav_change():
@@ -114,6 +152,8 @@ with st.sidebar:
     st.divider()
     st.caption("Tip: wijzig instellingen in stap 2 en klik pas daarna op **Start analyse**.")
 
+# render_fixed_logo()
+
 
 # -----------------------------
 # Step 1: Load + validate
@@ -125,6 +165,7 @@ def render_step_1() -> None:
         "Als er fouten zijn, tonen we wat je moet aanpassen.",
     )
 
+
     try:
         df_prev = load_csv_preview(st.session_state.input_csv_path, nrows=200)
     except Exception as e:
@@ -132,18 +173,24 @@ def render_step_1() -> None:
         st.exception(e)
         st.stop()
 
-    st.session_state.df_preview = df_prev
+    # st.session_state.df_preview = df_prev
+    #
+    # vr = validate_dataframe(df_prev, geometry_col="geometry", source_col="source")
+    # st.session_state.validation = {"errors": vr.errors, "warnings": vr.warnings, "info": vr.info}
+    # show_messages(vr.errors, vr.warnings, vr.info)
 
-    vr = validate_dataframe(df_prev, geometry_col="geometry", source_col="source")
-    st.session_state.validation = {"errors": vr.errors, "warnings": vr.warnings, "info": vr.info}
-    show_messages(vr.errors, vr.warnings, vr.info)
 
-    st.subheader("Voorbeeld van de data")
-    st.dataframe(df_prev.head(20), use_container_width=True)
+    # if vr.errors:
+    #     st.info("Los eerst de fouten op. Daarna kun je verder naar stap 2.")
+    #     return
+    c1, c2, c3 = st.columns([1, 2, 1])
 
-    if vr.errors:
-        st.info("Los eerst de fouten op. Daarna kun je verder naar stap 2.")
-        return
+    with c1:
+        st.image(
+            "afbeeldingen/ChatGPT Image Jan 25, 2026 at 05_03_10 PM.png",
+            caption="source: ChatGPT",
+            width=700,
+        )
 
     c1, _ = st.columns([1, 5])
     with c1:
@@ -157,8 +204,8 @@ def render_step_1() -> None:
 # -----------------------------
 def render_step_2() -> None:
     step_header(
-        "Stap 2 — Instellingen kiezen",
-        "Kies de clusteringinstellingen. Gebruik bij twijfel de standaardwaarden. "
+        "Stap 2 — Clustering keuzes instellen",
+        "In deze stap kan je de clustering keuzes instellen. "
         "Klik daarna op **Start analyse**.",
     )
 
@@ -170,127 +217,155 @@ def render_step_2() -> None:
             st.rerun()
         return
 
-    df_prev = st.session_state.df_preview
-    available_bouwwerk_features = []
-    if isinstance(df_prev, pd.DataFrame):
-        available_bouwwerk_features = [c for c in BOUWWERK_FEATURES if c in df_prev.columns]
 
-    with st.form("settings_form", clear_on_submit=False):
-        st.subheader("Basisinstellingen")
-        c1, c2, c3, c4 = st.columns(4)
 
-        with c1:
-            algorithm = st.selectbox("Clustering algoritme", options=["dbscan", "hdbscan"], index=0)
-        with c2:
-            eps_m = st.number_input(
-                "Maximale afstand tussen locaties (meter)",
-                min_value=50.0,
-                max_value=50000.0,
-                value=5000.0,
-                step=50.0,
-            )
-        with c3:
-            min_samples = st.number_input(
-                "Minimaal aantal locaties per cluster (algoritme)",
-                min_value=1,
-                max_value=999,
-                value=3,
-                step=1,
-            )
-        with c4:
-            min_cluster_size = st.number_input(
-                "Minimaal aantal locaties per cluster (filter)",
-                min_value=1,
-                max_value=999,
-                value=3,
-                step=1,
-            )
+    try:
+        header_df = pd.read_csv(st.session_state.input_csv_path, nrows=0)
+        csv_columns = [str(c).strip() for c in header_df.columns]
+    except Exception:
+        csv_columns = []
 
-        target_n_clusters = st.number_input(
-            "Aantal clusters om te tonen (Top N)",
-            min_value=1,
-            max_value=200,
-            value=10,
-            step=1,
+    # Match met whitelist (BOUWWERK_FEATURES)
+    available_bouwwerk_features = [c for c in BOUWWERK_FEATURES if c in csv_columns]
+
+    # -----------------------------
+    # Basisinstellingen (geen form -> direct zichtbaar/aanpasbaar)
+    # -----------------------------
+    st.subheader("Basisinstellingen")
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        st.text_input("Clustering algoritme", value="dbscan", disabled=True)
+
+    with c2:
+        eps_m = st.number_input(
+            "Maximale afstand tussen locaties (meter)",
+            min_value=50.0,
+            max_value=50000.0,
+            value=float(st.session_state.get("eps_m", 5000.0)),
+            step=50.0,
+            key="eps_m",
         )
 
-        with st.expander("Geavanceerde opties", expanded=False):
-            st.markdown("**Bronnen**")
-            exclude_sources = st.multiselect(
-                "Locatietypes uitsluiten",
-                options=SOURCE_OPTIONS,
-                default=["Bovenregionaal"],
-                help="Uitsluiten betekent: deze locaties tellen niet mee in clustering.",
-            )
+    with c3:
+        min_samples = st.number_input(
+            "Minimaal aantal locaties per cluster (algoritme)",
+            min_value=1,
+            max_value=999,
+            value=int(st.session_state.get("min_samples", 3)),
+            step=1,
+            key="min_samples",
+        )
 
-            st.caption("Minimaal aantal locaties per locatietype binnen een cluster (0 = geen eis).")
-            min_per_source = {}
-            cols = st.columns(2)
-            for i, s in enumerate(SOURCE_OPTIONS):
-                with cols[i % 2]:
-                    default_val = 0 if s in ["Bovenregionaal"] else 1
-                    v = st.number_input(
-                        f"minimaal aantal: {s}",
-                        min_value=0,
-                        max_value=999,
-                        value=default_val,
-                        step=1,
-                        help="Als je dit op 0 zet, stellen we geen minimum-eis.",
+    with c4:
+        min_cluster_size = st.number_input(
+            "Minimaal aantal locaties per cluster (filter)",
+            min_value=1,
+            max_value=999,
+            value=int(st.session_state.get("min_cluster_size", 3)),
+            step=1,
+            key="min_cluster_size",
+        )
+
+    target_n_clusters = st.number_input(
+        "Aantal clusters om te tonen (Top N)",
+        min_value=1,
+        max_value=200,
+        value=int(st.session_state.get("target_n_clusters", 10)),
+        step=1,
+        key="target_n_clusters",
+    )
+
+    # -----------------------------
+    # Geavanceerd
+    # -----------------------------
+    with st.expander("Geavanceerde opties", expanded=False):
+        st.markdown("**Bronnen**")
+        exclude_sources = st.multiselect(
+            "Locatietypes uitsluiten",
+            options=SOURCE_OPTIONS,
+            default=st.session_state.get("exclude_sources", ["Bovenregionaal"]),
+            help="Uitsluiten betekent: deze locaties tellen niet mee in clustering.",
+            key="exclude_sources",
+        )
+
+        st.caption("Minimaal aantal locaties per locatietype binnen een cluster (0 = geen eis).")
+        min_per_source = {}
+        cols = st.columns(2)
+        for i, s in enumerate(SOURCE_OPTIONS):
+            with cols[i % 2]:
+                default_val = 0 if s in ["Bovenregionaal"] else 1
+                v = st.number_input(
+                    f"minimaal aantal: {s}",
+                    min_value=0,
+                    max_value=999,
+                    value=int(st.session_state.get(f"min_per_source_{s}", default_val)),
+                    step=1,
+                    help="Als je dit op 0 zet, stellen we geen minimum-eis.",
+                    key=f"min_per_source_{s}",
+                )
+                if int(v) > 0:
+                    min_per_source[s] = int(v)
+
+        st.markdown("**Optimalisatie (alleen Bouwwerk)**")
+        use_opt_rule = st.checkbox(
+            "Gebruik optimalisatie",
+            value=bool(st.session_state.get("use_opt_rule", False)),
+            help="Kiest Top-N clusters op basis van een Bouwwerk-kenmerk.",
+            key="use_opt_rule",
+        )
+
+        opt_rules: List[OptimizationRule] = []
+        if use_opt_rule:
+            if not available_bouwwerk_features:
+                st.warning("Geen Bouwwerk-feature kolommen gevonden in je CSV (van de bekende lijst).")
+            else:
+                opt_column = st.selectbox(
+                    "Bouwwerk feature (kolom)",
+                    options=available_bouwwerk_features,
+                    index=0,
+                    key="opt_column",
+                )
+                opt_dir = st.selectbox(
+                    "Richting (max/min)",
+                    options=DIR_OPTIONS,
+                    index=0,
+                    key="opt_dir",
+                )
+                importance = st.selectbox(
+                    "Belang (weging)",
+                    options=["laag", "normaal", "hoog"],
+                    index=["laag", "normaal", "hoog"].index(
+                        st.session_state.get("importance", "normaal")
+                    ),
+                    key="importance",
+                )
+                weight_map = {"laag": 0.5, "normaal": 1.0, "hoog": 2.0}
+                opt_rules = [
+                    OptimizationRule(
+                        column=str(opt_column),
+                        agg="sum",
+                        direction=str(opt_dir),
+                        weight=float(weight_map[str(importance)]),
                     )
-                    if int(v) > 0:
-                        min_per_source[s] = int(v)
+                ]
 
-            st.markdown("**Optimalisatie (alleen Bouwwerk)**")
-            use_opt_rule = st.checkbox(
-                "Gebruik optimalisatie",
-                value=False,
-                help="Kiest Top-N clusters op basis van een Bouwwerk-kenmerk.",
-            )
-            opt_rules: List[OptimizationRule] = []
-            if use_opt_rule:
-                if not available_bouwwerk_features:
-                    st.warning("Geen Bouwwerk-feature kolommen gevonden in je CSV (van de bekende lijst).")
-                else:
-                    opt_column = st.selectbox("Bouwwerk feature (kolom)", options=available_bouwwerk_features)
-                    opt_dir = st.selectbox("Richting (max/min)", options=DIR_OPTIONS, index=0)
-                    importance = st.select_slider(
-                        "Belang (weging)",
-                        options=["laag", "normaal", "hoog"],
-                        value="normaal",
-                        help="Hoe zwaar telt dit mee in de selectie van Top-N clusters?",
-                    )
-                    weight_map = {"laag": 0.5, "normaal": 1.0, "hoog": 2.0}
-                    opt_rules = [
-                        OptimizationRule(column=opt_column, agg="sum", direction=opt_dir, weight=weight_map[importance])
-                    ]
+        # Toolbox context is bewust weg uit stap 2 (komt pas in stap 4)
 
-            st.markdown("**Toolbox-context (voor stap 4)**")
-            st.caption("Deze vragen helpen om oplossingen te filteren. Je kunt dit later aanpassen.")
-            t1, t2, t3, t4 = st.columns(4)
-            with t1:
-                grid_constraints_present = st.checkbox("Netcongestie/knelpunt aanwezig", value=True)
-            with t2:
-                feed_in_capacity_available = st.checkbox("Teruglevering mogelijk", value=True)
-            with t3:
-                flexible_load_present = st.checkbox("Stuurbaar verbruik aanwezig", value=False)
-            with t4:
-                physical_space_available = st.checkbox("Fysieke ruimte beschikbaar", value=True)
+    st.divider()
 
-            with st.expander("Aanvullende context (optioneel)", expanded=False):
-                suitable_wind_location_present = st.checkbox("Geschikte windlocatie", value=False)
-                spatial_opportunity_available = st.checkbox("Ruimtelijke kans aanwezig", value=True)
-                sufficient_thermal_demand_present = st.checkbox("Voldoende warmtevraag", value=False)
-                thermal_demand_is_low = st.checkbox("Warmtevraag is laag", value=False)
+    # -----------------------------
+    # Start analyse
+    # -----------------------------
+    start = st.button("Start analyse", type="primary")
 
-        submitted = st.form_submit_button("Start analyse")
-
-    if not submitted:
-        st.info("Kies instellingen en klik op **Start analyse** om clustering uit te voeren.")
+    if not start:
+        st.info("Pas instellingen aan en klik op **Start analyse** om clustering uit te voeren.")
         return
 
     cfg = ClusterConfig(
         input_csv=st.session_state.input_csv_path,
-        algorithm=str(algorithm),
+        algorithm="dbscan",  # vast
         eps_m=float(eps_m),
         min_samples=int(min_samples),
         min_cluster_size=int(min_cluster_size),
@@ -301,17 +376,6 @@ def render_step_2() -> None:
         make_plot=False,
     )
     cfg_hash = hashlib.sha256(repr(cfg).encode("utf-8")).hexdigest()
-
-    st.session_state.toolbox_toggles = {
-        "grid_constraints_present": bool(grid_constraints_present),
-        "feed_in_capacity_available": bool(feed_in_capacity_available),
-        "flexible_load_present": bool(flexible_load_present),
-        "physical_space_available": bool(physical_space_available),
-        "suitable_wind_location_present": bool(suitable_wind_location_present),
-        "spatial_opportunity_available": bool(spatial_opportunity_available),
-        "sufficient_thermal_demand_present": bool(sufficient_thermal_demand_present),
-        "thermal_demand_is_low": bool(thermal_demand_is_low),
-    }
 
     need_recompute = (
         (st.session_state.cfg_hash != cfg_hash)
@@ -342,17 +406,32 @@ def render_step_2() -> None:
     c1, _ = st.columns([1, 5])
     with c1:
         if st.button("Ga naar stap 3 →"):
-            request_step(4)
+            request_step(3)  # <-- dit was de bug in jouw app
             st.rerun()
+
+
 
 
 # -----------------------------
 # Step 3: Clusters view
 # -----------------------------
 def render_step_3() -> None:
+    # Force scroll naar boven bij openen van stap 3
+    st.markdown('<div id="top-of-step-3"></div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <script>
+        const el = window.parent.document.getElementById("top-of-step-3");
+        if (el) { el.scrollIntoView({behavior: "instant", block: "start"}); }
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
+
     step_header(
         "Stap 3 — Clusters bekijken",
-        "Bekijk de gevonden clusters. Kies een cluster om detailinformatie te zien.",
+        "Bekijk de gevonden clusters. Je kunt de top 3 clusters tonen of één specifiek cluster kiezen "
+        ".",
     )
 
     clusters = st.session_state.clusters_wgs84
@@ -374,11 +453,10 @@ def render_step_3() -> None:
         n_points, n_clusters, n_noise, noise_pct = 0, 0, 0, "—"
 
     kpi_row(
-        [
-            ("Locaties (punten)", f"{n_points:,}".replace(",", "."), "Aantal locaties in de input."),
-            ("Clusters", f"{n_clusters:,}".replace(",", "."), "Aantal gevonden clusters (na filtering)."),
-            ("Noise / niet-geclusterd", f"{n_noise:,}".replace(",", "."), "Locaties die niet in een cluster vielen."),
-            ("% noise", noise_pct, "Aandeel locaties zonder cluster."),
+        [("Aantal clusters", f"{n_clusters:,}".replace(",", "."), "Aantal gevonden clusters."),
+            ("Totaal aantal locaties in de analyse", f"{n_points:,}".replace(",", "."), "Aantal locaties in de analyse."),
+
+
         ]
     )
 
@@ -386,11 +464,47 @@ def render_step_3() -> None:
     if "geometry" in clusters_df.columns:
         clusters_df = clusters_df.drop(columns=["geometry"])
 
-    sort_col = "cluster_score_norm" if "cluster_score_norm" in clusters_df.columns else None
-    if sort_col:
-        clusters_df = clusters_df.sort_values(sort_col, ascending=False)
+    # --- Alleen deze details tonen + labels zoals jij wil ---
+    DETAIL_LABELS = {
+        "rank": "rank",
+        "cluster_id": "Cluster ID",
+        "n_points": "Aantal locaties",
+        "sum_pairwise_dist_m": "Totale afstand tussen locaties",
+        "mean_pairwise_dist_m": "Gemiddelde afstand tussen de locaties",
+        "mean_opwek_to_others_m": "Energie opwek (MWp)",
+        "sub_opwek_kw": "Energie opwek (kw)",
+        "sum_bouwwerk_kw": "Vraag bouwwerken (kw)",
+        "future_demand_kw": "Toekomstige vraag VKA's",
+        "vrije_ruimte_kw": "Vrije ruimte energie in het cluster (kw)",
+        "n_Energieproject": "Aantal energieprojecten",
+        "n_Bouwwerk": "Aantal bouwwerken",
+        "n_locatiespecifiek": "Aantal locatiespecifiek VKA",
+        "n_Bovenregionaal": "Aantal bovenregionaal VKA",
+    }
 
-    dataframe_section("Cluster-overzicht", clusters_df, height=380)
+    # Cluster-overzicht: alleen gewenste kolommen
+    keep_cols = [c for c in DETAIL_LABELS.keys() if c in clusters_df.columns]
+    clusters_overview = clusters_df[keep_cols].copy()
+    # Verwijder lege rijen (alles NaN/leeg) en rijen zonder cluster_id
+    clusters_overview = clusters_overview.dropna(how="all")
+
+    if "cluster_id" in clusters_overview.columns:
+        clusters_overview = clusters_overview.dropna(subset=["cluster_id"])
+
+    # Sorteren op rank in overzicht
+    if "rank" in clusters_overview.columns:
+        try:
+            clusters_overview["rank"] = pd.to_numeric(clusters_overview["rank"], errors="coerce")
+            clusters_overview = clusters_overview.sort_values("rank", ascending=True)
+        except Exception:
+            clusters_overview = clusters_overview.sort_values("rank", ascending=True)
+    else:
+        st.info("Kolom 'rank' ontbreekt; cluster-overzicht wordt niet op rank gesorteerd.")
+
+    # Hernoem kolommen voor overzicht
+    clusters_overview = clusters_overview.rename(columns=DETAIL_LABELS)
+
+    dataframe_section("Gevonden clusters", clusters_overview, height=220)
 
     ids = (
         sorted([int(x) for x in clusters_df["cluster_id"].dropna().unique().tolist()])
@@ -401,24 +515,111 @@ def render_step_3() -> None:
         st.info("Geen clusters gevonden. Tip: vergroot de afstand (eps) of verlaag minima.")
         return
 
-    selected = st.selectbox("Kies een cluster voor detail", options=ids, index=0)
-    st.session_state.selected_cluster_id = int(selected)
+    # -----------------------------
+    # Default selectie = rank 1
+    # -----------------------------
+    default_cluster_id = ids[0]
+    if "rank" in clusters_df.columns:
+        try:
+            ranked = clusters_df.dropna(subset=["rank", "cluster_id"]).copy()
+            ranked["rank_num"] = pd.to_numeric(ranked["rank"], errors="coerce")
+            ranked = ranked.dropna(subset=["rank_num"]).sort_values("rank_num", ascending=True)
+            if not ranked.empty:
+                default_cluster_id = int(ranked.iloc[0]["cluster_id"])  # beste/rank=1
+        except Exception:
+            default_cluster_id = ids[0]
 
-    row = clusters_df[clusters_df["cluster_id"] == int(selected)].iloc[0]
-    st.subheader(f"Cluster {int(selected)} — details")
-    detail_cols = [c for c in row.index if c not in ["cluster_id"]]
-    st.dataframe(
-        pd.DataFrame({"kenmerk": detail_cols, "waarde": [row[c] for c in detail_cols]}),
-        use_container_width=True,
-        height=260,
+    # -----------------------------
+    # Keuze: top 3 of specifiek
+    # -----------------------------
+    mode = st.radio(
+        "Weergave",
+        options=["Laat top 3 zien", "Laat specifiek cluster zien"],
+        index=0,  # default: specifiek
+        horizontal=True,
+        key="step3_view_mode",
     )
+
+    def render_cluster_block(cluster_id: int) -> None:
+        row = clusters_df[clusters_df["cluster_id"] == int(cluster_id)].iloc[0]
+        st.subheader(f"Cluster {int(cluster_id)}")
+
+        # 1) Eerst: locaties in dit cluster
+        st.markdown("#### Locaties in dit cluster")
+        if "cluster_id" not in points.columns:
+            st.info("Geen puntinformatie met cluster_id beschikbaar om locatienamen te tonen.")
+        elif "LocatieNaam" not in points.columns:
+            st.info(
+                "Kolom **LocatieNaam** ontbreekt in de data. Voeg deze kolom toe om locatienamen per cluster te tonen.")
+        else:
+            pts_df = pd.DataFrame(points)
+            pts_cluster = pts_df[pts_df["cluster_id"] == int(cluster_id)].copy()
+
+            cols_to_show = ["LocatieNaam"]
+            if "source" in pts_cluster.columns:
+                cols_to_show.append("source")
+
+            show_df = pts_cluster[cols_to_show].copy()
+            show_df["LocatieNaam"] = show_df["LocatieNaam"].astype(str).map(lambda x: x.strip())
+            show_df = show_df[show_df["LocatieNaam"].notna() & (show_df["LocatieNaam"] != "")]
+            show_df = show_df.sort_values("LocatieNaam")
+
+            st.caption(
+                f"{int(show_df['LocatieNaam'].nunique())} unieke locaties"
+            )
+            st.dataframe(show_df, use_container_width=True, height=300, hide_index=True)
+
+        # 2) Daarna: clusterdetails
+        st.markdown("#### Details")
+        detail_rows = []
+        for key, label in DETAIL_LABELS.items():
+            if key in row.index:
+                detail_rows.append({"Kenmerk": label, "Waarde": row[key]})
+
+        details_df = pd.DataFrame(detail_rows)
+        st.dataframe(details_df, use_container_width=True, height=260, hide_index=True)
+
+    if mode == "Laat top 3 zien":
+        if "rank" in clusters_df.columns:
+            top3_ids = (
+                clusters_df.dropna(subset=["rank", "cluster_id"])
+                .assign(rank_num=lambda d: pd.to_numeric(d["rank"], errors="coerce"))
+                .dropna(subset=["rank_num"])
+                .sort_values("rank_num", ascending=True)
+                .head(3)["cluster_id"]
+                .astype(int)
+                .tolist()
+            )
+        else:
+            top3_ids = ids[:3]
+
+        if not top3_ids:
+            st.info("Geen clusters om te tonen.")
+        else:
+            st.info(f"Top {len(top3_ids)} clusters.")
+            for cid in top3_ids:
+                render_cluster_block(int(cid))
+                st.divider()
+
+            st.session_state.selected_cluster_id = int(top3_ids[0])
+
+    else:
+        default_index = ids.index(default_cluster_id) if default_cluster_id in ids else 0
+
+        selected = st.selectbox(
+            "Kies een cluster voor detail",
+            options=ids,
+            index=default_index,
+            key="step3_selected_cluster_id",
+        )
+        st.session_state.selected_cluster_id = int(selected)
+        render_cluster_block(int(selected))
 
     c1, _ = st.columns([1, 5])
     with c1:
         if st.button("Ga naar stap 4 →"):
             request_step(4)
             st.rerun()
-
 
 # -----------------------------
 # Step 4: Recommendations + export
@@ -450,46 +651,81 @@ def render_step_4() -> None:
         st.session_state.selected_cluster_id = selected_cluster_id
 
     st.subheader("Toolbox-instellingen")
-    toggles = st.session_state.get(
-        "toolbox_toggles",
-        {
-            "grid_constraints_present": True,
-            "feed_in_capacity_available": True,
-            "flexible_load_present": False,
-            "physical_space_available": True,
-            "suitable_wind_location_present": False,
-            "spatial_opportunity_available": True,
-            "sufficient_thermal_demand_present": False,
-            "thermal_demand_is_low": False,
-        },
-    )
 
-    with st.expander("Context aanpassen (optioneel)", expanded=False):
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            toggles["grid_constraints_present"] = st.checkbox(
-                "Netcongestie/knelpunt aanwezig",
-                value=bool(toggles.get("grid_constraints_present", True)),
-            )
-        with c2:
-            toggles["feed_in_capacity_available"] = st.checkbox(
-                "Teruglevering mogelijk",
-                value=bool(toggles.get("feed_in_capacity_available", True)),
-            )
-        with c3:
-            toggles["flexible_load_present"] = st.checkbox(
-                "Stuurbaar verbruik aanwezig",
-                value=bool(toggles.get("flexible_load_present", False)),
-            )
-        with c4:
-            toggles["physical_space_available"] = st.checkbox(
-                "Fysieke ruimte beschikbaar",
-                value=bool(toggles.get("physical_space_available", True)),
-            )
+    # Zorgt dat toggles nooit None zijn (fix van eerder blijft)
+    DEFAULT_TOGGLES = {
+        "grid_constraints_present": True,
+        "feed_in_capacity_available": True,
+        "flexible_load_present": False,
+        "physical_space_available": True,
+        "suitable_wind_location_present": False,
+        "spatial_opportunity_available": True,
+        "sufficient_thermal_demand_present": False,
+        "thermal_demand_is_low": False,
+    }
 
+    toggles = st.session_state.get("toolbox_toggles")
+    if not isinstance(toggles, dict):
+        toggles = DEFAULT_TOGGLES.copy()
+    else:
+        for k, v in DEFAULT_TOGGLES.items():
+            toggles.setdefault(k, v)
+
+    # --- widgets altijd zichtbaar ---
+    c1, c2 = st.columns(2)
+
+    with c1:
+        toggles["grid_constraints_present"] = st.checkbox(
+            "Netcongestie / netbeperking aanwezig",
+            value=bool(toggles.get("grid_constraints_present", True)),
+            key="toggle_grid_constraints_present",
+        )
+        toggles["feed_in_capacity_available"] = st.checkbox(
+            "Terugleverruimte beschikbaar",
+            value=bool(toggles.get("feed_in_capacity_available", True)),
+            key="toggle_feed_in_capacity_available",
+        )
+        toggles["flexible_load_present"] = st.checkbox(
+            "Flexibele/stuurbare vraag aanwezig",
+            value=bool(toggles.get("flexible_load_present", True)),
+            key="toggle_flexible_load_present",
+        )
+        toggles["physical_space_available"] = st.checkbox(
+            "Fysieke ruimte beschikbaar (bijv. container/ruimte voor techniek)",
+            value=bool(toggles.get("physical_space_available", True)),
+            key="toggle_physical_space_available",
+        )
+
+    with c2:
+        toggles["suitable_wind_location_present"] = st.checkbox(
+            "Geschikte windlocatie aanwezig",
+            value=bool(toggles.get("suitable_wind_location_present", False)),
+            key="toggle_suitable_wind_location_present",
+        )
+        toggles["spatial_opportunity_available"] = st.checkbox(
+            "Ruimtelijke mogelijkheid aanwezig (gebied/ruimte/bodem)",
+            value=bool(toggles.get("spatial_opportunity_available", True)),
+            key="toggle_spatial_opportunity_available",
+        )
+        toggles["sufficient_thermal_demand_present"] = st.checkbox(
+            "Voldoende thermische vraag aanwezig",
+            value=bool(toggles.get("sufficient_thermal_demand_present", True)),
+            key="toggle_sufficient_thermal_demand_present",
+        )
+        toggles["thermal_demand_is_low"] = st.checkbox(
+            "Thermische vraag is laag",
+            value=bool(toggles.get("thermal_demand_is_low", False)),
+            key="toggle_thermal_demand_is_low",
+        )
+
+    # altijd terugschrijven
     st.session_state.toolbox_toggles = toggles
 
-    top_k = st.slider("Aantal oplossingen per cluster", min_value=1, max_value=10, value=5, step=1)
+    top_k = st.selectbox(
+        "Maximaal aantal clusters",
+        options=list(range(1, 11)),  # 1 t/m 10
+        index=4,  # standaard = 5
+    )
 
     mode = st.radio(
         "Welke clusters wil je bekijken?",
@@ -506,7 +742,19 @@ def render_step_4() -> None:
 
     yaml_path = "toolbox_solutions.yaml"
     try:
-        recs = compute_recommendations(view_df, yaml_path=yaml_path, top_k=int(top_k), toggles=toggles)
+
+        toggles_fingerprint = hashlib.sha256(
+            json.dumps(toggles, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
+        recs = compute_recommendations(
+            view_df,
+            yaml_path=yaml_path,
+            top_k=int(top_k),
+            toggles=dict(toggles),  # copy: voorkomt gedoe met mutatie
+            toggles_fingerprint=toggles_fingerprint,
+        )
+
     except Exception as e:
         st.error("Kon toolbox-aanbevelingen niet berekenen.")
         st.exception(e)
@@ -516,6 +764,29 @@ def render_step_4() -> None:
 
     for cid, lst in recs.items():
         st.markdown(f"## Cluster {cid}")
+        # --- LocatieNaam + source onder cluster header (zoals stap 3) ---
+        if "cluster_id" in points.columns and "LocatieNaam" in points.columns:
+            pts_df = pd.DataFrame(points)
+            pts_cluster = pts_df[pts_df["cluster_id"] == int(cid)].copy()
+
+            cols_to_show = ["LocatieNaam"]
+            if "source" in pts_cluster.columns:
+                cols_to_show.append("source")
+
+            show_df = pts_cluster[cols_to_show].copy()
+            show_df["LocatieNaam"] = show_df["LocatieNaam"].astype(str).map(lambda x: x.strip())
+            show_df = show_df[show_df["LocatieNaam"].notna() & (show_df["LocatieNaam"] != "")]
+            show_df = show_df.sort_values("LocatieNaam")
+
+            st.caption(
+                f"{int(show_df['LocatieNaam'].nunique())} unieke locatiena(a)m(en) "
+                f"(totaal punten in cluster: {len(pts_cluster)})"
+            )
+            st.dataframe(show_df, use_container_width=True, height=220, hide_index=True)
+        else:
+            # Stil falen (geen spam): alleen tonen als je wil debuggen
+            pass
+
         if not lst:
             st.info("Geen toepasselijke oplossingen gevonden (op basis van de huidige context/voorwaarden).")
             continue

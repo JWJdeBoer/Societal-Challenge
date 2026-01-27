@@ -7,27 +7,92 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # === Helperfunctie ===
-def merge_shapefiles(folder: str, recursive: bool = False) -> gpd.GeoDataFrame:
-    """
-    Lees alle shapefiles in (en optioneel onder) de map `folder` en merge ze tot één GeoDataFrame.
-    """
-    if recursive:
-        pattern = f"{folder}/**/*.shp"
-    else:
-        pattern = f"{folder}/*.shp"
+import glob
+from pathlib import Path
+import geopandas as gpd
+import pandas as pd
 
+import re
+
+
+
+def _clean_str(x):
+    if isinstance(x, str):
+        s = x.strip()
+        return s if s else None
+    return None
+
+def make_display_name(row):
+    src = _clean_str(row.get("source"))
+    naam_loc = _clean_str(row.get("Naam_locatie"))
+    naam = _clean_str(row.get("Naam"))
+    oms = _clean_str(row.get("Omschrijvi"))
+    proj = _clean_str(row.get("Projectnaam"))
+    ent = _clean_str(row.get("Entity"))
+    adr = _clean_str(row.get("Adres"))
+
+    # === Bovenregionaal & Locatiespecifiek ===
+    # Naam_locatie + (Naam of Omschrijvi)
+    if src in ("Bovenregionaal", "Locatiespecifiek"):
+        suffix = naam or oms
+        if naam_loc and suffix:
+            return f"{naam_loc} ({suffix})"
+        return naam_loc or suffix
+
+    # === Bouwwerk ===
+    # Entity (Adres)
+    if src == "Bouwwerk":
+        if ent and adr:
+            return f"{ent} ({adr})"
+        return ent or adr or naam or oms
+
+    # === Energieproject ===
+    # Projectnaam
+    if src == "Energieproject":
+        return proj or naam or oms or naam_loc
+
+    # Fallback
+    return naam_loc or naam or oms or proj or ent or adr
+
+def clean_bovenregionaal_name(name: str) -> str:
+    """
+    Verwijdert 'YYYYMMDD_VKA_behoefte ' uit bestandsnamen.
+    """
+    return re.sub(r"^\d{8}_VKA_behoefte\s*", "", name)
+
+
+def merge_shapefiles(
+    folder: str,
+    recursive: bool = False,
+    folder_col: str = "Naam_locatie",
+    name_from: str = "parent"   # "parent" of "file"
+) -> gpd.GeoDataFrame:
+    folder = Path(folder)
+
+    pattern = str(folder / ("**/*.shp" if recursive else "*.shp"))
     shapefile_paths = glob.glob(pattern, recursive=recursive)
 
     if not shapefile_paths:
         raise ValueError(f"Geen shapefiles gevonden in: {folder}")
 
-    geodataframes = [gpd.read_file(path) for path in shapefile_paths]
+    geodataframes = []
+    for path in shapefile_paths:
+        p = Path(path)
+        gdf = gpd.read_file(p)
 
-    merged_gdf = gpd.GeoDataFrame(
-        pd.concat(geodataframes, ignore_index=True),
-        crs=geodataframes[0].crs,
-    )
-    return merged_gdf
+        if name_from == "file":
+            name = p.stem                      # bestandsnaam zonder .shp
+            name = clean_bovenregionaal_name(name)   # 🔥 prefix strippen
+            gdf[folder_col] = name
+        else:
+            gdf[folder_col] = p.parent.name
+
+        geodataframes.append(gdf)
+
+    return gpd.GeoDataFrame(pd.concat(geodataframes, ignore_index=True), crs=geodataframes[0].crs)
+
+
+
 
 
 
@@ -43,8 +108,20 @@ AANSLUITINGEN_XLSX = BASE_DATA_DIR / "TUD Basislijst Bekende aansluitingen (sept
 
 
 # === 1. VKA-shapefiles mergen ===
-gdf_bovenregionaal = merge_shapefiles(str(BOVENREGIONAAL_VKA_DIR), recursive=False)
-gdf_locatiespecifiek = merge_shapefiles(str(LOCATIESPECIFIEK_VKA_DIR), recursive=True)
+gdf_bovenregionaal = merge_shapefiles(
+    str(BOVENREGIONAAL_VKA_DIR),
+    recursive=False,
+    folder_col="Naam_locatie",
+    name_from="file"          # shapefile naam → opgeschoond
+)
+
+gdf_locatiespecifiek = merge_shapefiles(
+    str(LOCATIESPECIFIEK_VKA_DIR),
+    recursive=True,
+    folder_col="Naam_locatie",
+    name_from="parent"        # mapnaam
+)
+
 
 
 # === 2. Bouwwerken + Excel combineren ===
@@ -61,7 +138,7 @@ gdf_bouwwerken = gdf_bouwwerken.merge(
 gdf_energieprojecten = gpd.read_file("energieprojecten.gpkg", layer="projecten")
 
 import re
-import numpy as np
+
 
 # === Opwek (MWp) direct toevoegen aan gdf_energieprojecten (VOOR combined_gdf) ===
 POT_COL = "Potentie"     # <-- pas aan naar jouw echte kolomnaam
@@ -164,7 +241,7 @@ mapping = {
     "sourceTxt":"Omschrijvi", "nam":"Naam",
 }
 
-kolommen = ["Omschrijvi", "geometry","Naam"]
+kolommen = ["Omschrijvi", "geometry","Naam","Naam_locatie"]
 
 def clean_cols(df, mapping=mapping,kolommen=kolommen, geometry_col="geometry"):
     is_geo = isinstance(df, gpd.GeoDataFrame)
@@ -180,6 +257,7 @@ def clean_cols(df, mapping=mapping,kolommen=kolommen, geometry_col="geometry"):
     if is_geo:
         return gpd.GeoDataFrame(df_merged, geometry=geometry_col, crs=crs)
     return df_merged
+
 
 gdf_bovenregionaal, gdf_locatiespecifiek  = [clean_cols(df) for df in [gdf_bovenregionaal, gdf_locatiespecifiek]]
 
@@ -215,6 +293,9 @@ gdf_bouwwerken.to_file("cleaned_data/Bouwwerken.gpkg", layer ="data",driver="GPK
 
 print(gdf_bouwwerken.columns)
 
+combined_gdf["LocatieNaam"] = combined_gdf.apply(make_display_name, axis=1)
+
+
 combined_gdf.to_file("cleaned_data/combined.gpkg", layer ="data",driver="GPKG")
 
-combined_gdf.to_csv("combined.csv")
+combined_gdf.to_csv("combined2.0.csv")
