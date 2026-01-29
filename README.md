@@ -110,9 +110,10 @@ pip install -r requirements.txt
 
 ---
 
-## Run the Streamlit App
+## Run the Tool on a local server
 ### It is really important to open an terminal in the streamlit2.0 directiory otherwise it won't work.
 #### (you can do this by right click on the streamlit2.0 directory --> open in --> terminal)
+#### Run the next line in de streamlit2.0 terminal
 ```bash
 streamlit run app.py
 ```
