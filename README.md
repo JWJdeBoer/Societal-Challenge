@@ -65,6 +65,9 @@ Societal-Challenge/
 ```
 
 ---
+## Supporting content
+
+In the supporting content files are the data management plan and the informed consent files from the intervieuws. 
 
 ## ⚙️ Installation & Running the Tool (IMPORTANT)
 
